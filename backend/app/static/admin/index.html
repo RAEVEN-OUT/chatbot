@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FAQ Chatbot Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>FAQ Chatbot Admin</h1>
+        <p id="statusText">Local admin</p>
+      </div>
+      <div class="topbar-actions">
+        <input id="adminKey" type="password" placeholder="Admin API key" autocomplete="off" />
+        <button id="saveKeyBtn" type="button">Save Key</button>
+        <button id="seedBtn" type="button">Seed Demo</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <label for="siteSelect">Current Site</label>
+        <select id="siteSelect"></select>
+        <button id="refreshBtn" type="button">Refresh</button>
+
+        <nav class="tabs" aria-label="Admin sections">
+          <button class="tab active" data-tab="sites" type="button">Sites</button>
+          <button class="tab" data-tab="groups" type="button">Groups</button>
+          <button class="tab" data-tab="faqs" type="button">FAQs</button>
+          <button class="tab" data-tab="logs" type="button">Fallback Logs</button>
+          <button class="tab" data-tab="tester" type="button">Tester</button>
+        </nav>
+      </aside>
+
+      <section class="content">
+        <section id="sites" class="panel active-panel">
+          <div class="panel-heading">
+            <h2>Sites</h2>
+          </div>
+          <form id="siteForm" class="form-grid">
+            <input id="siteId" placeholder="site id, optional" />
+            <input id="siteName" placeholder="Site name" required />
+            <input id="siteDomain" placeholder="Domain" />
+            <input id="siteHelpline" placeholder="Helpline number" required />
+            <input id="siteWelcome" placeholder="Welcome message" />
+            <input id="siteFallback" placeholder="Fallback message" />
+            <input id="siteAcceptDistance" type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
+            <input id="siteCandidateDistance" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
+            <label class="checkbox-row">
+              <input id="siteActive" type="checkbox" checked />
+              Active
+            </label>
+            <button type="submit">Save Site</button>
+          </form>
+          <div id="sitesList" class="table"></div>
+        </section>
+
+        <section id="groups" class="panel">
+          <div class="panel-heading">
+            <h2>Groups</h2>
+          </div>
+          <form id="groupForm" class="form-grid">
+            <input id="groupId" placeholder="group id, optional" />
+            <input id="groupName" placeholder="Group name" required />
+            <input id="groupDescription" placeholder="Description" />
+            <div class="span-all">
+              <label>Sites in group</label>
+              <div id="groupSiteChecks" class="check-grid"></div>
+            </div>
+            <button type="submit">Save Group</button>
+          </form>
+          <div id="groupsList" class="table"></div>
+        </section>
+
+        <section id="faqs" class="panel">
+          <div class="panel-heading">
+            <h2>FAQs</h2>
+          </div>
+          <form id="faqForm" class="faq-form">
+            <input id="faqId" type="hidden" />
+            <div class="segmented">
+              <label><input name="targetMode" type="radio" value="current" checked /> Current site</label>
+              <label><input name="targetMode" type="radio" value="multiple" /> Multiple sites</label>
+              <label><input name="targetMode" type="radio" value="group" /> Group</label>
+            </div>
+            <div id="multiSiteTarget" class="target-box hidden">
+              <label>Target sites</label>
+              <div id="faqSiteChecks" class="check-grid"></div>
+            </div>
+            <div id="groupTarget" class="target-box hidden">
+              <label for="faqGroupSelect">Target group</label>
+              <select id="faqGroupSelect"></select>
+            </div>
+            <input id="faqQuestion" placeholder="Question" required />
+            <textarea id="faqAliases" placeholder="Aliases, one per line"></textarea>
+            <textarea id="faqAnswer" placeholder="Exact answer to return" required></textarea>
+            <div class="form-actions">
+              <button type="submit">Save FAQ</button>
+              <button id="clearFaqBtn" type="button">Clear</button>
+            </div>
+          </form>
+          <div id="faqsList" class="faq-list"></div>
+        </section>
+
+        <section id="logs" class="panel">
+          <div class="panel-heading">
+            <h2>Fallback Logs</h2>
+            <label class="checkbox-row">
+              <input id="fallbackOnly" type="checkbox" checked />
+              Hide FAQ hits
+            </label>
+          </div>
+          <div id="logsList" class="log-list"></div>
+        </section>
+
+        <section id="tester" class="panel">
+          <div class="panel-heading">
+            <h2>Tester</h2>
+          </div>
+          <form id="leadForm" class="form-grid">
+            <input id="testName" placeholder="Name" />
+            <input id="testEmail" placeholder="Email" />
+            <input id="testPhone" placeholder="Phone" />
+            <button type="submit">Start Session</button>
+          </form>
+          <form id="testForm" class="tester">
+            <input id="testQuestion" placeholder="Ask a question" />
+            <button type="submit">Send</button>
+          </form>
+          <div id="testMessages" class="messages"></div>
+        </section>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
