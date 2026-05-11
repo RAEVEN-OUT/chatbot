@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Site Portal</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
+  </head>
+  <body>
+
+    <!-- ── Login Overlay ── -->
+    <div id="loginOverlay" class="login-overlay active">
+      <div class="login-card">
+        <h2>Site Portal Login</h2>
+        <form id="loginForm">
+          <input type="email"    id="loginEmail"    placeholder="Email"    required />
+          <input type="password" id="loginPassword" placeholder="Password" required />
+          <button type="submit">Sign In</button>
+          <div style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+            <p style="font-size: 12px; color: var(--muted); margin-bottom: 8px;">Developer / Local Testing:</p>
+            <input type="password" id="devApiKey" placeholder="Admin API Key from .env" />
+            <button id="devLoginBtn" type="button" class="ghost" style="width: 100%;">Use API Key</button>
+          </div>
+          <p id="loginError" class="error-text"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- ── Top Bar ── -->
+    <header class="topbar">
+      <div>
+        <h1>Site Portal</h1>
+        <p id="statusText">Loading…</p>
+      </div>
+      <div class="topbar-right">
+        <span id="globalLoading" class="loading-spinner" style="display:none;">Processing…</span>
+        <div id="siteBadge" class="site-badge" style="display:none;">
+          <span class="dot" id="siteDot"></span>
+          <span id="siteBadgeText">—</span>
+        </div>
+        <!-- Multi-site switcher (shown when user has > 1 site) -->
+        <select id="siteSelect" style="display:none; max-width:200px;"></select>
+        <span id="userEmail" style="color:var(--muted); font-size:13px;"></span>
+        <button id="logoutBtn" type="button" style="display:none;">Log Out</button>
+      </div>
+    </header>
+
+    <!-- ── Main Layout ── -->
+    <main class="layout" id="mainLayout" style="display:none;">
+      <!-- Sidebar tabs -->
+      <aside class="sidebar">
+        <button id="refreshBtn" type="button" class="ghost" style="width:100%;">↻ Refresh</button>
+        <nav class="tabs" aria-label="Portal sections">
+          <button class="tab active" data-tab="faqs"      type="button">FAQs</button>
+          <button class="tab"        data-tab="logs"      type="button">Fallback Logs</button>
+          <button class="tab"        data-tab="analytics" type="button">Analytics</button>
+          <button class="tab"        data-tab="tester"    type="button">Tester</button>
+          <button class="tab"        data-tab="settings"  type="button">Site Settings</button>
+          <button class="tab"        data-tab="snippet"   type="button">Widget Snippet</button>
+        </nav>
+      </aside>
+
+      <section class="content">
+
+        <!-- ── FAQs ── -->
+        <section id="faqs" class="panel active-panel">
+          <div class="panel-heading">
+            <h2>FAQs</h2>
+          </div>
+          <form id="faqForm" class="faq-form">
+            <input id="faqId" type="hidden" />
+            <input id="faqQuestion" placeholder="Question" required />
+            <textarea id="faqAliases" placeholder="Aliases / keywords, one per line"></textarea>
+            <textarea id="faqAnswer"   placeholder="Exact answer to return" required></textarea>
+            <div class="form-actions">
+              <button type="submit">Save FAQ</button>
+              <button id="clearFaqBtn" type="button" class="ghost">Clear</button>
+              <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+                <input id="csvFile" type="file" accept=".csv" class="hidden" />
+                <button id="importCsvBtn" type="button" class="secondary">Import CSV</button>
+              </div>
+            </div>
+          </form>
+          <div id="faqsList" class="faq-list"></div>
+        </section>
+
+        <!-- ── Fallback Logs ── -->
+        <section id="logs" class="panel">
+          <div class="panel-heading">
+            <h2>Fallback Logs</h2>
+            <label class="checkbox-row">
+              <input id="fallbackOnly" type="checkbox" checked />
+              Hide FAQ hits
+            </label>
+          </div>
+          <div id="logsList" class="log-list"></div>
+        </section>
+
+        <!-- ── Analytics ── -->
+        <section id="analytics" class="panel">
+          <div class="panel-heading"><h2>Analytics</h2></div>
+          <div class="analytics-grid">
+            <div class="stat-card">
+              <h3>Total Queries</h3>
+              <p id="statTotal">0</p>
+            </div>
+            <div class="stat-card">
+              <h3>FAQ Hit Rate</h3>
+              <p id="statHitRate">0%</p>
+              <p id="statFaqHits" style="font-size:0.8rem; color:var(--text-muted); margin:0;">0 hits</p>
+            </div>
+            <div class="stat-card">
+              <h3>AI Fallback Rate</h3>
+              <p id="statLlmRate">0%</p>
+              <p id="statLlmHits" style="font-size:0.8rem; color:var(--text-muted); margin:0;">0 fallbacks</p>
+            </div>
+            <div class="stat-card">
+              <h3>Helpline Escaped</h3>
+              <p id="statHelplineRate" style="color:var(--danger);">0%</p>
+            </div>
+          </div>
+          <div class="panel-heading"><h2>Top 5 FAQs</h2></div>
+          <div id="topFaqsList" class="table"></div>
+        </section>
+
+        <!-- ── Tester ── -->
+        <section id="tester" class="panel">
+          <div class="panel-heading">
+            <h2>Tester</h2>
+            <span id="testerSiteName" style="font-size:0.85rem; color:var(--text-muted);">No site selected</span>
+          </div>
+          <div id="testMessages" class="messages"
+               style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:12px; min-height:200px; max-height:420px;"></div>
+          <form id="leadForm" class="form-grid" style="border-top:1px solid var(--border); padding-top:12px;">
+            <input id="testName"  placeholder="Name" />
+            <input id="testEmail" placeholder="Email" />
+            <input id="testPhone" placeholder="Phone" />
+            <button id="startSessionBtn" type="submit" style="grid-column:1/-1;">Start Session</button>
+          </form>
+          <form id="testForm" class="tester hidden" style="border-top:1px solid var(--border); padding-top:12px;">
+            <input id="testQuestion" placeholder="Ask a question…" autocomplete="off" />
+            <button id="testSendBtn" type="submit">Send</button>
+          </form>
+        </section>
+
+        <!-- ── Site Settings ── -->
+        <section id="settings" class="panel">
+          <div class="panel-heading"><h2>Site Settings</h2></div>
+          <form id="settingsForm" class="form-grid">
+            <input id="setHelpline"    placeholder="Helpline number" required />
+            <input id="setWelcome"     placeholder="Welcome message" />
+            <input id="setFallback"    placeholder="Fallback message" />
+            <input id="setAcceptDist"  type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
+            <input id="setCandidateDist" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
+            <input id="setOrigins"     placeholder="Allowed Origins (comma separated)" />
+            <div class="span-all" style="display:grid; grid-template-columns: auto 1fr 1fr auto; gap:10px; align-items:center;">
+              <label style="display:flex; flex-direction:column; font-size:0.8rem; color:var(--muted);">
+                Color
+                <input id="setPrimaryColor" type="color" value="#22c55e" style="height:38px; width:60px; padding:2px;" />
+              </label>
+              <input id="setBotName"   placeholder="Bot Display Name" />
+              <input id="setBotAvatar" placeholder="Bot Avatar URL" />
+              <input id="setLauncher"  placeholder="Icon (e.g. 💬 ?)" style="width:120px;" />
+            </div>
+            <label class="checkbox-row span-all">
+              <input id="setActive" type="checkbox" checked />
+              Site Active
+            </label>
+            <button type="submit" class="span-all">Save Settings</button>
+          </form>
+        </section>
+
+        <!-- ── Widget Snippet ── -->
+        <section id="snippet" class="panel">
+          <div class="panel-heading"><h2>Widget Embed Snippet</h2></div>
+          <p style="color:var(--muted); margin-bottom:16px;">
+            Copy this snippet and paste it before the <code>&lt;/body&gt;</code> tag of your website.
+          </p>
+          <div style="position:relative;">
+            <pre id="snippetCode" class="snippet-box"></pre>
+            <button class="copy-btn" id="copySnippetBtn" type="button">Copy</button>
+          </div>
+          <p style="color:var(--muted); font-size:13px;">
+            The widget will automatically connect to your site and load the correct branding, welcome message, and FAQs.
+          </p>
+        </section>
+
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

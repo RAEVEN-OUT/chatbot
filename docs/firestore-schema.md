@@ -81,6 +81,14 @@ Create Firestore vector indexes on `faq_vectors.embedding`, with filters for:
 - `site_id == ...`
 - `active == true`
 
+Create a composite index for exact FAQ/alias matches:
+
+- collection: `faq_vectors`
+- fields: `site_id ASC`, `active ASC`, `normalized_text ASC`
+
+The chat path queries this index before embedding, so exact user text and alias
+matches do not download every FAQ vector for the site.
+
 ## `chat_sessions/{sessionId}`
 
 ```json
@@ -118,3 +126,24 @@ Create Firestore vector indexes on `faq_vectors.embedding`, with filters for:
 ```
 
 Admin uses this collection to find questions where FAQ answer was not used and convert them into new FAQs.
+
+## RBAC Model
+
+Panel access is enforced from Firebase Auth custom claims. Recommended claims:
+
+```json
+{
+  "role": "editor",
+  "tenant_id": "default",
+  "site_ids": ["goride-chennai", "goride-coimbatore"]
+}
+```
+
+Roles:
+
+- `viewer`: read assigned sites, FAQs, logs, and analytics.
+- `editor`: viewer permissions plus FAQ edits, log conversion, imports, and reindexing.
+- `admin`: editor permissions plus site settings for assigned sites.
+- `super_admin`: full platform access, including creating/deleting sites and groups.
+
+Use `site_ids: ["*"]` only for platform admins. Keep role checks in the API; UI filtering is only a convenience.

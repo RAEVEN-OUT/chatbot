@@ -12,6 +12,7 @@ from app.schemas.models import (
     ReviewStatus,
     SiteGroupRecord,
     SiteRecord,
+    BackgroundTaskRecord,
 )
 
 
@@ -33,8 +34,17 @@ class MemoryRepository(Repository):
         self.groups: dict[str, SiteGroupRecord] = {}
         self.faqs: dict[str, FaqRecord] = {}
         self.vectors: dict[str, FaqVectorRecord] = {}
+        self.vector_exact_index: dict[tuple[str, str], str] = {}
         self.sessions: dict[str, ChatSessionRecord] = {}
         self.logs: dict[str, ChatLogRecord] = {}
+        self.tasks: dict[str, BackgroundTaskRecord] = {}
+
+    def _rebuild_vector_indexes(self) -> None:
+        self.vector_exact_index = {
+            (vector.site_id, vector.normalized_text): vector.id
+            for vector in self.vectors.values()
+            if vector.active
+        }
 
     def list_sites(self) -> list[SiteRecord]:
         return sorted(self.sites.values(), key=lambda item: item.name.lower())
@@ -51,6 +61,7 @@ class MemoryRepository(Repository):
         self.vectors = {
             key: value for key, value in self.vectors.items() if value.site_id != site_id
         }
+        self._rebuild_vector_indexes()
 
     def list_groups(self) -> list[SiteGroupRecord]:
         return sorted(self.groups.values(), key=lambda item: item.name.lower())
@@ -104,6 +115,7 @@ class MemoryRepository(Repository):
         }
         for vector in vectors:
             self.vectors[vector.id] = vector
+        self._rebuild_vector_indexes()
 
     def list_vectors_for_site(self, site_id: str) -> list[FaqVectorRecord]:
         return [
@@ -111,6 +123,16 @@ class MemoryRepository(Repository):
             for vector in self.vectors.values()
             if vector.site_id == site_id and vector.active
         ]
+
+    def get_vector_by_normalized_text(
+        self,
+        site_id: str,
+        normalized_text: str,
+    ) -> FaqVectorRecord | None:
+        vector_id = self.vector_exact_index.get((site_id, normalized_text))
+        if not vector_id:
+            return None
+        return self.vectors.get(vector_id)
 
     def search_vectors(
         self,
@@ -135,11 +157,15 @@ class MemoryRepository(Repository):
         self.logs[log.id] = log
         return log
 
+    def get_log(self, log_id: str) -> ChatLogRecord | None:
+        return self.logs.get(log_id)
+
     def list_logs(
         self,
         site_id: str | None = None,
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
+        limit: int = 200,
     ) -> list[ChatLogRecord]:
         logs = list(self.logs.values())
         if site_id:
@@ -148,8 +174,15 @@ class MemoryRepository(Repository):
             logs = [log for log in logs if log.response_type == response_type]
         if review_status:
             logs = [log for log in logs if log.review_status == review_status]
-        return sorted(logs, key=lambda item: item.timestamp, reverse=True)
+        return sorted(logs, key=lambda item: item.timestamp, reverse=True)[:limit]
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
         self.logs[log.id] = log
         return log
+
+    def get_background_task(self, task_id: str) -> BackgroundTaskRecord | None:
+        return self.tasks.get(task_id)
+
+    def upsert_background_task(self, task: BackgroundTaskRecord) -> BackgroundTaskRecord:
+        self.tasks[task.id] = task
+        return task

@@ -23,6 +23,16 @@ def _get_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _get_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 def _get_origins() -> list[str]:
     raw = os.getenv("ALLOWED_ORIGINS", "*").strip()
     if raw == "*":
@@ -39,10 +49,14 @@ class Settings:
     google_cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     firestore_database: str = os.getenv("FIRESTORE_DATABASE", "(default)")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
     gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
     allowed_origins: list[str] = None  # type: ignore[assignment]
     collect_all_chat_logs: bool = _get_bool("COLLECT_ALL_CHAT_LOGS", True)
+    repository_cache_ttl_seconds: int = _get_int("REPOSITORY_CACHE_TTL_SECONDS", 60)
+    repository_cache_max_items: int = _get_int("REPOSITORY_CACHE_MAX_ITEMS", 1000)
+    embedding_cache_ttl_seconds: int = _get_int("EMBEDDING_CACHE_TTL_SECONDS", 86400)
+    embedding_cache_max_items: int = _get_int("EMBEDDING_CACHE_MAX_ITEMS", 5000)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_origins", _get_origins())

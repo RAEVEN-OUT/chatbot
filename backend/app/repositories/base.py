@@ -11,6 +11,7 @@ from app.schemas.models import (
     ReviewStatus,
     SiteGroupRecord,
     SiteRecord,
+    BackgroundTaskRecord,
 )
 
 
@@ -62,6 +63,13 @@ class Repository(Protocol):
     def list_vectors_for_site(self, site_id: str) -> list[FaqVectorRecord]:
         ...
 
+    def get_vector_by_normalized_text(
+        self,
+        site_id: str,
+        normalized_text: str,
+    ) -> FaqVectorRecord | None:
+        ...
+
     def search_vectors(
         self,
         site_id: str,
@@ -79,13 +87,23 @@ class Repository(Protocol):
     def add_log(self, log: ChatLogRecord) -> ChatLogRecord:
         ...
 
+    def get_log(self, log_id: str) -> ChatLogRecord | None:
+        ...
+
     def list_logs(
         self,
         site_id: str | None = None,
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
+        limit: int = 200,
     ) -> list[ChatLogRecord]:
         ...
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
+        ...
+
+    def get_background_task(self, task_id: str) -> BackgroundTaskRecord | None:
+        ...
+
+    def upsert_background_task(self, task: BackgroundTaskRecord) -> BackgroundTaskRecord:
         ...

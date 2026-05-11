@@ -37,6 +37,7 @@ POST   /api/logs/{log_id}/convert-to-faq
 GET  /api/chat/sites/{site_id}/config
 POST /api/chat/sessions
 POST /api/chat/message
+POST /api/chat/message/stream
 ```
 
 Example:
@@ -47,6 +48,15 @@ Example:
   "session_id": "session_abc",
   "question": "tell me about demo site"
 }
+```
+
+`POST /api/chat/message/stream` accepts the same body and returns newline-delimited
+JSON events:
+
+```json
+{"type":"metadata","response_type":"faq_hit","session_id":"session_abc"}
+{"type":"token","text":"Demo Site is a sample chatbot site used to test FAQ retrieval."}
+{"type":"done"}
 ```
 
 Response:

@@ -1,0 +1,50 @@
+INFO:     Started server process [17468]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8002 (Press CTRL+C to quit)
+D:\Projects\chatbot\backend\.venv\Lib\site-packages\google\cloud\firestore_v1\base_collection.py:317: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  return query.where(field_path, op_string, value)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:277: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:278: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("normalized_text", "==", normalized_text)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:302: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:258: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)
+Chat stream failed for site demo-site
+Traceback (most recent call last):
+  File "D:\Projects\chatbot\backend\app\services\llm_service.py", line 212, in stream_answer_from_faqs_async
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\Projects\chatbot\backend\.venv\Lib\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '404 Not Found' for url 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?key=AIzaSyBjbZ0uRMa2yUmYOSzbjKf2C0unNYTDJ7Q'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Projects\chatbot\backend\app\api\chat.py", line 137, in events
+    async for chunk in retrieval_service.stream_answer(payload):
+        yield f"{json.dumps(chunk)}\n"
+  File "D:\Projects\chatbot\backend\app\services\retrieval_service.py", line 330, in stream_answer
+    async for event in self._stream_llm_fallback(
+    ...<7 lines>...
+        yield event
+  File "D:\Projects\chatbot\backend\app\services\retrieval_service.py", line 377, in _stream_llm_fallback
+    async for token in self.llm.stream_answer_from_faqs_async(payload.question, candidates):
+        full_answer += token
+        yield {"type": "token", "text": token}
+  File "D:\Projects\chatbot\backend\app\services\llm_service.py", line 246, in stream_answer_from_faqs_async
+    raise self._runtime_error(exc, "LLM stream") from exc
+          ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "D:\Projects\chatbot\backend\app\services\llm_service.py", line 110, in _runtime_error
+    body = exc.response.text[:300].replace(self.api_key, "[redacted]")
+           ^^^^^^^^^^^^^^^^^
+  File "D:\Projects\chatbot\backend\.venv\Lib\site-packages\httpx\_models.py", line 644, in text
+    content = self.content
+              ^^^^^^^^^^^^
+  File "D:\Projects\chatbot\backend\.venv\Lib\site-packages\httpx\_models.py", line 638, in content
+    raise ResponseNotRead()
+httpx.ResponseNotRead: Attempted to access streaming response content, without having called `read()`.

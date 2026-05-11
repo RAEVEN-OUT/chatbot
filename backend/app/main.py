@@ -24,17 +24,35 @@ app.add_middleware(
 app.include_router(chat.router)
 app.include_router(admin.router)
 
-admin_static = Path(__file__).resolve().parent / "static" / "admin"
+admin_static  = Path(__file__).resolve().parent / "static" / "admin"
+portal_static = Path(__file__).resolve().parent / "static" / "portal"
 widget_static = ROOT_DIR / "widget"
 
-app.mount("/admin", StaticFiles(directory=admin_static, html=True), name="admin")
-app.mount("/widget", StaticFiles(directory=widget_static), name="widget")
+app.mount("/admin",  StaticFiles(directory=admin_static,  html=True), name="admin")
+app.mount("/portal", StaticFiles(directory=portal_static, html=True), name="portal")
+app.mount("/widget", StaticFiles(directory=widget_static),             name="widget")
 
 
 @app.get("/")
 def index():
     return RedirectResponse(url="/admin/")
 
+
+@app.get("/portal")
+def portal_redirect():
+    return RedirectResponse(url="/portal/")
+
+
+@app.get("/debug-portal")
+def debug_portal():
+    import os
+    p = Path(__file__).resolve().parent / "static" / "portal"
+    return {
+        "path": str(p),
+        "exists": p.exists(),
+        "files": [f.name for f in p.glob("*")] if p.exists() else [],
+        "current_file": __file__
+    }
 
 @app.get("/health")
 def health():

@@ -40,6 +40,10 @@ class SiteBase(BaseModel):
     llm_candidate_distance: float = 0.55
     active: bool = True
     allowed_origins: list[str] = Field(default_factory=list)
+    primary_color: str = "#22c55e"
+    bot_name: str = "Support Bot"
+    bot_avatar_url: str = ""
+    launcher_icon: str = "?"
 
 
 class SiteCreate(SiteBase):
@@ -57,6 +61,10 @@ class SiteUpdate(BaseModel):
     llm_candidate_distance: float | None = None
     active: bool | None = None
     allowed_origins: list[str] | None = None
+    primary_color: str | None = None
+    bot_name: str | None = None
+    bot_avatar_url: str | None = None
+    launcher_icon: str | None = None
 
 
 class SiteRecord(SiteBase):
@@ -155,7 +163,7 @@ class ChatSessionRecord(ChatSessionCreate):
 
 class ChatMessageRequest(BaseModel):
     site_id: str
-    question: str
+    question: str = Field(min_length=1, max_length=2000)
     session_id: str | None = None
     name: str = ""
     email: str = ""
@@ -199,3 +207,30 @@ class ConvertLogRequest(BaseModel):
 class SeedDemoResponse(BaseModel):
     site: SiteRecord
     faq_count: int
+
+
+class BackgroundTaskStatus(str, Enum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+
+
+class BackgroundTaskRecord(BaseModel):
+    id: str
+    site_id: str
+    tenant_id: str = "default"
+    task_type: str = "import_csv"
+    status: BackgroundTaskStatus = BackgroundTaskStatus.pending
+    total_items: int = 0
+    processed_items: int = 0
+    error_message: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+class AdminUserCreate(BaseModel):
+    email: str
+    password: str
+    role: str = "editor"
+    site_ids: list[str] = Field(default_factory=list)

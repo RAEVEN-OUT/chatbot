@@ -1,0 +1,14 @@
+INFO:     Started server process [29488]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8003 (Press CTRL+C to quit)
+D:\Projects\chatbot\backend\.venv\Lib\site-packages\google\cloud\firestore_v1\base_collection.py:317: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  return query.where(field_path, op_string, value)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:277: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:278: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("normalized_text", "==", normalized_text)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:302: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)
+D:\Projects\chatbot\backend\app\repositories\firestore.py:258: UserWarning: Detected filter using positional arguments. Prefer using the 'filter' keyword argument instead.
+  .where("active", "==", True)

@@ -8,6 +8,11 @@ This project is a starter implementation for a multi-site chatbot where FAQs are
 - Site, group, FAQ, chat session, and fallback log APIs
 - FAQ-first retrieval pipeline
 - Per-site vector records generated from FAQ questions and aliases
+- Async Gemini calls in the chat path
+- Site-scoped exact-match lookup before embedding/vector search
+- Process-local Firestore cache for site config and hot FAQ vector lookups
+- Process-local Gemini embedding cache for repeated queries
+- Site-scoped admin RBAC via Firebase custom claims
 - Optional Gemini embedding and LLM fallback adapters
 - Firestore repository adapter skeleton
 - In-memory repository for local development
@@ -50,6 +55,20 @@ You do not need keys to run the scaffold locally. For production you will need:
 - Firebase service account / Google credentials for Firestore
 - `GOOGLE_CLOUD_PROJECT`
 - `GEMINI_API_KEY`
+
+## Admin RBAC
+
+Firebase custom claims can scope panel users to one site, many sites, or the whole platform:
+
+```json
+{
+  "role": "editor",
+  "site_ids": ["demo-site"],
+  "tenant_id": "default"
+}
+```
+
+Roles are `viewer`, `editor`, `admin`, and `super_admin`. Use `site_ids: ["*"]` for all sites. The fallback `ADMIN_API_KEY` and local development mode act as `super_admin`.
 
 ## Retrieval Priority
 

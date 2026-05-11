@@ -1,4 +1,5 @@
 # Implementation Plan
+[Technical Architecture & Indexing Details](./technical-architecture.md)
 
 ## Phase 1: MVP
 
@@ -12,23 +13,40 @@
 - Widget script
 - Admin fallback log review
 
-## Phase 2: Production Hardening
+## Phase 2: Production Hardening (Completed)
 
-- Firebase Auth or admin SSO
-- Per-tenant role permissions
-- Domain allow-list enforcement for widget calls
-- Rate limiting by site and IP
-- Batch FAQ import from CSV/XLSX
-- Background reindex job for large FAQ imports
-- Better analytics: FAQ hit rate, LLM fallback rate, helpline rate, estimated API spend
+- [x] Firebase Auth or admin SSO
+- [x] Domain allow-list enforcement for widget calls
+- [x] Rate limiting by site and IP
+- [x] Batch FAQ import from CSV/XLSX
+- [x] Better analytics: FAQ hit rate, LLM fallback rate, helpline rate, estimated API spend
 
-## Phase 3: Scale
+## Phase 3: Scale & Appearance
 
-- Move from process reindexing to queue-based indexing
-- Add external vector DB if Firestore vector search becomes too limiting
-- Add hybrid retrieval with keyword + vector reranking
-- Add per-site branding config for widget
-- Add billing and tenant isolation
+- [x] **Per-Site Branding** (Dynamic Widget Styles, Custom Icons)
+- [x] **Queue-based Reindexing** (Background Tasks for Large CSVs)
+- [x] **Enhanced LLM Reranking** (Using Gemini for final answer validation)
+
+## Phase 4: Enterprise & Accuracy
+
+- **Hybrid Retrieval:** Implement keyword-based filtering alongside vector search to prevent name confusion (e.g., Madurai vs. Marudhamalai).
+- **Multi-Tenant RBAC:** Implement full role-based access control where different company admins can only manage their specific sites and see their own analytics.
+- **Distributed Background Workers:** Move reindexing and embedding generation to dedicated worker nodes (e.g., using Celery or Cloud Tasks) for massive 100,000+ row imports.
+- **External Vector Database:** Integrate with specialized vector DBs like Pinecone/Qdrant if Firestore KNN latency grows.
+- **Billing & Usage Metering:** Track API and embedding costs per tenant for automated billing.
+
+### Firestore Vector Indexing
+To ensure sub-second search performance once the database grows beyond ~1,000 total vectors, a composite vector index must be created. This enables native KNN search and prevents slow "Full Collection Scans."
+
+**Run this command to create the index:**
+```bash
+gcloud firestore indexes composite create \
+--collection-group=faq_vectors \
+--query-scope=COLLECTION \
+--field-config=field-path=site_id,order=ASCENDING \
+--field-config=field-path=active,order=ASCENDING \
+--field-config=vector-config='{"dimension":"768","flat": "{}"}',field-path=embedding
+```
 
 ## Admin Workflow
 
@@ -47,3 +65,18 @@
 - LLM fallback is only called for borderline candidates.
 - LLM is instructed to copy the FAQ answer exactly or return `NO_ANSWER`.
 - If no answer is found from that site's FAQs, return the site's helpline.
+
+## Phase 4: Production Readiness
+
+### Firestore Vector Indexing
+To ensure sub-second search performance once the database grows beyond ~1,000 total vectors, a composite vector index must be created. This enables native KNN search and prevents slow "Full Collection Scans."
+
+**Run this command to create the index:**
+```bash
+gcloud firestore indexes composite create \
+--collection-group=faq_vectors \
+--query-scope=COLLECTION \
+--field-config=field-path=site_id,order=ASCENDING \
+--field-config=field-path=active,order=ASCENDING \
+--field-config=vector-config='{"dimension":"768","flat": "{}"}',field-path=embedding
+```

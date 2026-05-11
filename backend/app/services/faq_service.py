@@ -1,4 +1,5 @@
 from __future__ import annotations
+from fastapi import BackgroundTasks
 
 from app.repositories.base import Repository
 from app.repositories.utils import merge_update, model_to_dict, new_id, slugify
@@ -40,29 +41,36 @@ class FaqService:
         updated = SiteRecord(**merge_update(site, payload))
         return self.repository.upsert_site(updated)
 
-    def create_group(self, payload: SiteGroupCreate) -> SiteGroupRecord:
+    def create_group(self, payload: SiteGroupCreate, background_tasks: BackgroundTasks | None = None) -> SiteGroupRecord:
         group_id = payload.id or slugify(payload.name, "group")
         data = model_to_dict(payload)
         data.pop("id", None)
         group = SiteGroupRecord(id=group_id, **data)
         saved = self.repository.upsert_group(group)
-        self.reindex_group(saved.id)
+        if background_tasks:
+            background_tasks.add_task(self.reindex_group, saved.id)
+        else:
+            self.reindex_group(saved.id)
         return saved
 
     def update_group(
         self,
         group_id: str,
         payload: SiteGroupUpdate,
+        background_tasks: BackgroundTasks | None = None,
     ) -> SiteGroupRecord | None:
         group = self.repository.get_group(group_id)
         if not group:
             return None
         updated = SiteGroupRecord(**merge_update(group, payload))
         saved = self.repository.upsert_group(updated)
-        self.reindex_group(saved.id)
+        if background_tasks:
+            background_tasks.add_task(self.reindex_group, saved.id)
+        else:
+            self.reindex_group(saved.id)
         return saved
 
-    def create_faq(self, payload: FaqCreate) -> FaqRecord:
+    def create_faq(self, payload: FaqCreate, background_tasks: BackgroundTasks | None = None) -> FaqRecord:
         faq_id = payload.id or new_id("faq")
         owner_type = payload.owner_type
         if payload.group_ids or len(payload.site_ids) > 1:
@@ -72,10 +80,13 @@ class FaqService:
         data["owner_type"] = owner_type
         faq = FaqRecord(id=faq_id, **data)
         saved = self.repository.upsert_faq(faq)
-        self.reindex_faq(saved.id)
+        if background_tasks:
+            background_tasks.add_task(self.reindex_faq, saved.id)
+        else:
+            self.reindex_faq(saved.id)
         return saved
 
-    def update_faq(self, faq_id: str, payload: FaqUpdate) -> FaqRecord | None:
+    def update_faq(self, faq_id: str, payload: FaqUpdate, background_tasks: BackgroundTasks | None = None) -> FaqRecord | None:
         faq = self.repository.get_faq(faq_id)
         if not faq:
             return None
@@ -85,7 +96,10 @@ class FaqService:
             data["owner_type"] = OwnerType.common
             updated = FaqRecord(**data)
         saved = self.repository.upsert_faq(updated)
-        self.reindex_faq(saved.id)
+        if background_tasks:
+            background_tasks.add_task(self.reindex_faq, saved.id)
+        else:
+            self.reindex_faq(saved.id)
         return saved
 
     def delete_faq(self, faq_id: str) -> None:
@@ -135,13 +149,18 @@ class FaqService:
                 )
         self.repository.replace_vectors_for_faq(faq.id, vectors)
 
+    def reindex_site(self, site_id: str) -> int:
+        faqs = self.repository.list_faqs(site_id=site_id)
+        for faq in faqs:
+            self.reindex_faq(faq.id)
+        return len(faqs)
+
     def convert_log_to_faq(
         self,
         log_id: str,
         payload: ConvertLogRequest,
     ) -> FaqRecord | None:
-        logs = self.repository.list_logs()
-        log = next((item for item in logs if item.id == log_id), None)
+        log = self.repository.get_log(log_id)
         if not log:
             return None
 
