@@ -80,3 +80,13 @@ Roles are `viewer`, `editor`, `admin`, and `super_admin`. Use `site_ids: ["*"]` 
 ```
 
 The answer returned for FAQ hits is the exact stored FAQ answer.
+
+
+Go to your Firebase Console.
+Click the Settings gear (Project Settings) -> Service Accounts tab.
+Click Generate New Private Key.
+This will download a .json file. Rename it to `firebase-key.json` and place it in the project root.
+In your `.env` file, add this line:
+```bash
+GOOGLE_APPLICATION_CREDENTIALS="firebase-key.json"
+```

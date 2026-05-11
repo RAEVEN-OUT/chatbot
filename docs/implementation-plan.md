@@ -38,15 +38,18 @@
 ### Firestore Vector Indexing
 To ensure sub-second search performance once the database grows beyond ~1,000 total vectors, a composite vector index must be created. This enables native KNN search and prevents slow "Full Collection Scans."
 
-**Run this command to create the index:**
-```bash
-gcloud firestore indexes composite create \
---collection-group=faq_vectors \
---query-scope=COLLECTION \
---field-config=field-path=site_id,order=ASCENDING \
---field-config=field-path=active,order=ASCENDING \
---field-config=vector-config='{"dimension":"768","flat": "{}"}',field-path=embedding
-```
+**To create this index without the CLI (via Firebase Console):**
+1. Go to the [Firebase Console](https://console.firebase.google.com/).
+2. Select **Firestore Database** -> **Indexes** tab -> **Composite**.
+3. Click **Create Index** and enter:
+   - **Collection ID:** `faq_vectors`
+   - **Query Scope:** `Collection`
+   - **Field 1:** `site_id` (Ascending)
+   - **Field 2:** `active` (Ascending)
+   - **Field 3:** `embedding` (Vector | Dimension: 768)
+4. Click **Create** and wait for the "Enabled" status.
+
+
 
 ## Admin Workflow
 

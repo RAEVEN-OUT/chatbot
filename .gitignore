@@ -5,3 +5,4 @@ __pycache__/
 backend/.venv/
 backend/app/**/__pycache__/
 tests/**/__pycache__/
+firebase-key.json

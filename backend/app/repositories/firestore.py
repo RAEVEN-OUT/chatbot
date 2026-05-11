@@ -314,7 +314,8 @@ class FirestoreRepository(Repository):
                 distance = float(data.pop("vector_distance", 1.0))
                 results.append((FaqVectorRecord(**self._from_firestore(data)), distance))
             return results
-        except Exception:
+        except Exception as exc:
+            print(f"DEBUG: Vector search failed (likely missing index). Error: {exc}")
             scored = [
                 (vector, cosine_distance(embedding, vector.embedding))
                 for vector in self.list_vectors_for_site(site_id)
