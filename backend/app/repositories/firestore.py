@@ -14,32 +14,25 @@ from app.schemas.models import (
     FaqRecord,
     FaqVectorRecord,
     ResponseType,
-    ReviewStatus,
-    SiteGroupRecord,
     SiteRecord,
-    BackgroundTaskRecord,
+    SiteGroupRecord,
 )
 
 
 class FirestoreRepository(Repository):
-    """Firestore-backed repository.
-
-    Firestore is the source of truth. Vector search can be enabled with native
-    Firestore vector indexes. If the local SDK does not support vector querying
-    in your installed version, the adapter falls back to scoring the active
-    vectors returned for the site. That fallback is only for small datasets.
-    """
+    """Firestore-backed repository with grouping support."""
 
     def __init__(self, project: str = "", database: str = "(default)") -> None:
         try:
             from google.cloud import firestore
-        except ImportError as exc:  # pragma: no cover
+        except ImportError as exc:
             raise RuntimeError("Install google-cloud-firestore to use Firestore.") from exc
 
         if project:
             self.db = firestore.Client(project=project, database=database)
         else:
             self.db = firestore.Client(database=database)
+            
         self._site_cache: TTLCache[str, SiteRecord] = TTLCache(
             ttl_seconds=settings.repository_cache_ttl_seconds,
             max_items=settings.repository_cache_max_items,
@@ -75,7 +68,6 @@ class FirestoreRepository(Repository):
         if collection == "faq_vectors" and isinstance(cleaned.get("embedding"), list):
             try:
                 from google.cloud.firestore_v1.vector import Vector
-
                 cleaned["embedding"] = Vector(cleaned["embedding"])
             except Exception:
                 pass
@@ -106,10 +98,6 @@ class FirestoreRepository(Repository):
         data = doc.to_dict()
         data["id"] = data.get("id", doc.id)
         return FaqRecord(**self._from_firestore(data))
-
-    def _chunks(self, values: list[str], size: int = 30):
-        for index in range(0, len(values), size):
-            yield values[index:index + size]
 
     def _invalidate_vector_caches(self, site_ids: set[str]) -> None:
         for site_id in site_ids:
@@ -163,47 +151,45 @@ class FirestoreRepository(Repository):
         self,
         site_id: str | None = None,
         group_id: str | None = None,
-        include_inactive: bool = False,
+        include_inactive: bool = False
     ) -> list[FaqRecord]:
         if site_id:
+            # We must find FAQs that belong directly to the site OR to a group that contains the site
             faq_by_id: dict[str, FaqRecord] = {}
-
-            # 1. Get direct FAQs
-            direct_query = self._collection("faq_sources").where(
-                "site_ids",
-                "array_contains",
-                site_id,
-            )
+            
+            # Direct site FAQs
+            direct_query = self._collection("faq_sources").where("site_ids", "array_contains", site_id)
             if not include_inactive:
                 direct_query = direct_query.where("active", "==", True)
             for doc in direct_query.stream():
                 faq = self._faq_from_snapshot(doc)
                 faq_by_id[faq.id] = faq
-
-            # 2. Get Group FAQs for this site
-            groups = self.list_groups()
-            site_group_ids = [g.id for g in groups if site_id in g.site_ids]
             
-            for g_id in site_group_ids:
-                group_query = self._collection("faq_sources").where("group_ids", "array_contains", g_id)
+            # Group FAQs
+            groups = self.list_groups()
+            target_group_ids = [g.id for g in groups if site_id in g.site_ids]
+            for g_id in target_group_ids:
+                g_query = self._collection("faq_sources").where("group_ids", "array_contains", g_id)
                 if not include_inactive:
-                    group_query = group_query.where("active", "==", True)
-                for doc in group_query.stream():
+                    g_query = g_query.where("active", "==", True)
+                for doc in g_query.stream():
                     faq = self._faq_from_snapshot(doc)
                     faq_by_id[faq.id] = faq
-
+                    
             docs = list(faq_by_id.values())
             if group_id:
-                docs = [faq for faq in docs if group_id in faq.group_ids]
-            return sorted(docs, key=lambda item: item.updated_at, reverse=True)
+                docs = [f for f in docs if group_id in f.group_ids]
+            return sorted(docs, key=lambda x: x.updated_at, reverse=True)
 
+        # General list
         query = self._collection("faq_sources")
-        if not include_inactive:
-            query = query.where("active", "==", True)
         if group_id:
             query = query.where("group_ids", "array_contains", group_id)
+        if not include_inactive:
+            query = query.where("active", "==", True)
+        
         docs = [self._faq_from_snapshot(doc) for doc in query.stream()]
-        return sorted(docs, key=lambda item: item.updated_at, reverse=True)
+        return sorted(docs, key=lambda x: x.updated_at, reverse=True)
 
     def get_faq(self, faq_id: str) -> FaqRecord | None:
         return self._load("faq_sources", faq_id, FaqRecord)
@@ -236,6 +222,7 @@ class FirestoreRepository(Repository):
             batch.delete(doc.reference)
             op_count += 1
             commit_if_full()
+            
         for vector in vectors:
             batch.set(
                 self._collection("faq_vectors").document(vector.id),
@@ -244,54 +231,12 @@ class FirestoreRepository(Repository):
             op_count += 1
             commit_if_full()
         commit_if_full(force=True)
+        
         site_ids = old_site_ids | {vector.site_id for vector in vectors}
         site_ids.discard("")
         self._invalidate_vector_caches(site_ids)
 
-    def list_vectors_for_site(self, site_id: str) -> list[FaqVectorRecord]:
-        cached = self._site_vectors_cache.get(site_id)
-        if cached is not None:
-            return cached
-        docs = (
-            self._collection("faq_vectors")
-            .where("site_id", "==", site_id)
-            .where("active", "==", True)
-            .stream()
-        )
-        vectors = [FaqVectorRecord(**self._from_firestore(doc.to_dict())) for doc in docs]
-        self._site_vectors_cache.set(site_id, vectors)
-        return vectors
-
-    def get_vector_by_normalized_text(
-        self,
-        site_id: str,
-        normalized_text: str,
-    ) -> FaqVectorRecord | None:
-        cache_key = (site_id, normalized_text)
-        cached = self._exact_vector_cache.get(cache_key)
-        if cached is not None:
-            return cached if isinstance(cached, FaqVectorRecord) else None
-        docs = (
-            self._collection("faq_vectors")
-            .where("site_id", "==", site_id)
-            .where("active", "==", True)
-            .where("normalized_text", "==", normalized_text)
-            .limit(1)
-            .stream()
-        )
-        for doc in docs:
-            vector = FaqVectorRecord(**self._from_firestore(doc.to_dict()))
-            self._exact_vector_cache.set(cache_key, vector)
-            return vector
-        self._exact_vector_cache.set(cache_key, False)
-        return None
-
-    def search_vectors(
-        self,
-        site_id: str,
-        embedding: list[float],
-        limit: int = 5,
-    ) -> list[tuple[FaqVectorRecord, float]]:
+    def search_vectors(self, site_id: str, embedding: list[float], limit: int = 5) -> list[tuple[FaqVectorRecord, float]]:
         try:
             from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
             from google.cloud.firestore_v1.vector import Vector
@@ -314,13 +259,46 @@ class FirestoreRepository(Repository):
                 distance = float(data.pop("vector_distance", 1.0))
                 results.append((FaqVectorRecord(**self._from_firestore(data)), distance))
             return results
-        except Exception as exc:
-            print(f"DEBUG: Vector search failed (likely missing index). Error: {exc}")
+        except Exception:
             scored = [
                 (vector, cosine_distance(embedding, vector.embedding))
                 for vector in self.list_vectors_for_site(site_id)
             ]
             return sorted(scored, key=lambda item: item[1])[:limit]
+
+    def list_vectors_for_site(self, site_id: str) -> list[FaqVectorRecord]:
+        cached = self._site_vectors_cache.get(site_id)
+        if cached is not None:
+            return cached
+        docs = (
+            self._collection("faq_vectors")
+            .where("site_id", "==", site_id)
+            .where("active", "==", True)
+            .stream()
+        )
+        vectors = [FaqVectorRecord(**self._from_firestore(doc.to_dict())) for doc in docs]
+        self._site_vectors_cache.set(site_id, vectors)
+        return vectors
+
+    def get_vector_by_normalized_text(self, site_id: str, normalized_text: str) -> FaqVectorRecord | None:
+        cache_key = (site_id, normalized_text)
+        cached = self._exact_vector_cache.get(cache_key)
+        if cached is not None:
+            return cached if isinstance(cached, FaqVectorRecord) else None
+        docs = (
+            self._collection("faq_vectors")
+            .where("site_id", "==", site_id)
+            .where("active", "==", True)
+            .where("normalized_text", "==", normalized_text)
+            .limit(1)
+            .stream()
+        )
+        for doc in docs:
+            vector = FaqVectorRecord(**self._from_firestore(doc.to_dict()))
+            self._exact_vector_cache.set(cache_key, vector)
+            return vector
+        self._exact_vector_cache.set(cache_key, False)
+        return None
 
     def create_session(self, session: ChatSessionRecord) -> ChatSessionRecord:
         self._save("chat_sessions", session.id, session)
@@ -336,20 +314,12 @@ class FirestoreRepository(Repository):
     def get_log(self, log_id: str) -> ChatLogRecord | None:
         return self._load("chat_logs", log_id, ChatLogRecord)
 
-    def list_logs(
-        self,
-        site_id: str | None = None,
-        response_type: ResponseType | None = None,
-        review_status: ReviewStatus | None = None,
-        limit: int = 200,
-    ) -> list[ChatLogRecord]:
+    def list_logs(self, site_id: str | None = None, response_type: ResponseType | None = None, limit: int = 200) -> list[ChatLogRecord]:
         query = self._collection("chat_logs")
         if site_id:
             query = query.where("site_id", "==", site_id)
         if response_type:
             query = query.where("response_type", "==", response_type.value)
-        if review_status:
-            query = query.where("review_status", "==", review_status.value)
         query = query.limit(max(1, min(limit, 1000)))
         logs = [ChatLogRecord(**self._from_firestore(doc.to_dict())) for doc in query.stream()]
         return sorted(logs, key=lambda item: item.timestamp, reverse=True)
@@ -357,10 +327,3 @@ class FirestoreRepository(Repository):
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
         self._save("chat_logs", log.id, log)
         return log
-
-    def get_background_task(self, task_id: str) -> BackgroundTaskRecord | None:
-        return self._load("background_tasks", task_id, BackgroundTaskRecord)
-
-    def upsert_background_task(self, task: BackgroundTaskRecord) -> BackgroundTaskRecord:
-        self._save("background_tasks", task.id, task)
-        return task

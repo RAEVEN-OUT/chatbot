@@ -36,13 +36,13 @@ Open:
 http://localhost:8000/admin/
 ```
 
-Widget embed example:
+Widget embed example (Production):
 
 ```html
 <script
-  src="http://localhost:8000/widget/chatbot-widget.js"
+  src="https://chatbot.goride.net.in/widget/chatbot-widget.js"
   data-site-id="demo-site"
-  data-api-base="http://localhost:8000"
+  data-api-base="https://chatbot.goride.net.in"
   data-collect-lead="true"
 ></script>
 ```

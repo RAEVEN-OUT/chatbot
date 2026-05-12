@@ -15,7 +15,6 @@ from app.schemas.models import (
     ChatSessionRecord,
     FaqVectorRecord,
     ResponseType,
-    ReviewStatus,
     SiteRecord,
 )
 from app.services.embedding_service import EmbeddingService
@@ -42,6 +41,8 @@ class RetrievalCandidate:
 
 
 class RetrievalService:
+    """Simplified retrieval logic."""
+    
     def __init__(
         self,
         repository: Repository,
@@ -137,11 +138,6 @@ class RetrievalService:
         if not settings.collect_all_chat_logs and candidate.response_type == ResponseType.faq_hit:
             return
 
-        review_status = (
-            ReviewStatus.reviewed
-            if candidate.response_type == ResponseType.faq_hit
-            else ReviewStatus.pending
-        )
         user_name, email, phone = self._contact_fields(session, payload)
         _schedule_background(
             self._add_log(
@@ -158,7 +154,6 @@ class RetrievalService:
                     matched_faq_id=candidate.matched_faq_id,
                     vector_distance=candidate.vector_distance,
                     llm_model=candidate.llm_model,
-                    review_status=review_status,
                 )
             )
         )
@@ -404,7 +399,6 @@ class RetrievalService:
                     matched_faq_id=best_vector.faq_id,
                     vector_distance=best_distance,
                     llm_model=self.llm.model_name,
-                    review_status=ReviewStatus.pending,
                 )
             )
         )
