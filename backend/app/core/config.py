@@ -57,6 +57,7 @@ class Settings:
     repository_cache_max_items: int = _get_int("REPOSITORY_CACHE_MAX_ITEMS", 1000)
     embedding_cache_ttl_seconds: int = _get_int("EMBEDDING_CACHE_TTL_SECONDS", 86400)
     embedding_cache_max_items: int = _get_int("EMBEDDING_CACHE_MAX_ITEMS", 5000)
+    vector_search_limit: int = _get_int("VECTOR_SEARCH_LIMIT", 5)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "allowed_origins", _get_origins())

@@ -178,7 +178,7 @@ class RetrievalService:
             self.repository.search_vectors,
             site.id,
             query_embedding,
-            5,
+            settings.vector_search_limit,
         )
         if not results:
             return self._helpline(site, None, None)
@@ -288,7 +288,7 @@ class RetrievalService:
                 self.repository.search_vectors,
                 site.id,
                 query_embedding,
-                5,
+                settings.vector_search_limit,
             )
             if results:
                 best_vector, best_distance = results[0]
