@@ -11,22 +11,11 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class OwnerType(str, Enum):
-    site = "site"
-    common = "common"
-
-
 class ResponseType(str, Enum):
     faq_hit = "faq_hit"
     llm_fallback = "llm_fallback"
     helpline = "helpline"
     error = "error"
-
-
-class ReviewStatus(str, Enum):
-    pending = "pending"
-    reviewed = "reviewed"
-    converted = "converted"
 
 
 class SiteBase(BaseModel):
@@ -40,7 +29,7 @@ class SiteBase(BaseModel):
     llm_candidate_distance: float = 0.55
     active: bool = True
     allowed_origins: list[str] = Field(default_factory=list)
-    primary_color: str = "#22c55e"
+    primary_color: str = "#126c57"
     bot_name: str = "Support Bot"
     bot_avatar_url: str = ""
     launcher_icon: str = "?"
@@ -69,7 +58,6 @@ class SiteUpdate(BaseModel):
 
 class SiteRecord(SiteBase):
     id: str
-    tenant_id: str = "default"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -94,7 +82,6 @@ class SiteGroupUpdate(BaseModel):
 
 class SiteGroupRecord(SiteGroupBase):
     id: str
-    tenant_id: str = "default"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -105,8 +92,6 @@ class FaqBase(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     site_ids: list[str] = Field(default_factory=list)
     group_ids: list[str] = Field(default_factory=list)
-    owner_type: OwnerType = OwnerType.site
-    tags: list[str] = Field(default_factory=list)
     active: bool = True
 
 
@@ -120,14 +105,11 @@ class FaqUpdate(BaseModel):
     aliases: list[str] | None = None
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
-    owner_type: OwnerType | None = None
-    tags: list[str] | None = None
     active: bool | None = None
 
 
 class FaqRecord(FaqBase):
     id: str
-    tenant_id: str = "default"
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -192,45 +174,10 @@ class ChatLogRecord(BaseModel):
     vector_distance: float | None = None
     llm_model: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
-    review_status: ReviewStatus = ReviewStatus.pending
-    converted_to_faq_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ConvertLogRequest(BaseModel):
-    answer: str | None = None
-    aliases: list[str] = Field(default_factory=list)
-    group_ids: list[str] = Field(default_factory=list)
-    site_ids: list[str] = Field(default_factory=list)
-
-
-class SeedDemoResponse(BaseModel):
-    site: SiteRecord
-    faq_count: int
-
-
-class BackgroundTaskStatus(str, Enum):
-    pending = "pending"
-    processing = "processing"
-    completed = "completed"
-    failed = "failed"
-
-
-class BackgroundTaskRecord(BaseModel):
-    id: str
-    site_id: str
-    tenant_id: str = "default"
-    task_type: str = "import_csv"
-    status: BackgroundTaskStatus = BackgroundTaskStatus.pending
-    total_items: int = 0
-    processed_items: int = 0
-    error_message: str | None = None
-    created_at: datetime = Field(default_factory=utc_now)
-    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class AdminUserCreate(BaseModel):
     email: str
     password: str
-    role: str = "editor"
     site_ids: list[str] = Field(default_factory=list)
