@@ -44,9 +44,9 @@ class BackgroundTaskRecord(BaseModel):
 
 
 class SiteBase(BaseModel):
-    name: str
+    name: Optional[str] = None
     domain: str = ""
-    helpline_number: str
+    helpline_number: Optional[str] = None
     welcome_message: str = "Hi, how can I help?"
     fallback_message: str = "I could not find the exact answer. Please contact our helpline."
     faq_accept_distance: float = 0.28
@@ -95,7 +95,6 @@ class SiteGroupBase(BaseModel):
     name: str
     description: str = ""
     site_ids: List[str] = Field(default_factory=list)
-    active: bool = True
 
 
 class SiteGroupCreate(SiteGroupBase):
@@ -106,7 +105,6 @@ class SiteGroupUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     site_ids: Optional[List[str]] = None
-    active: Optional[bool] = None
 
 
 class SiteGroupRecord(SiteGroupBase):

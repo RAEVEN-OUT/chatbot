@@ -85,6 +85,43 @@ function showLogin() { $("loginOverlay").classList.add("active"); $("mainLayout"
 function hideLogin() { $("loginOverlay").classList.remove("active"); $("mainLayout").style.display = "grid"; }
 function setStatus(text) { $("statusText").textContent = text; }
 function setLoading(on) { $("globalLoading").style.display = on ? "inline-block" : "none"; }
+
+function showToast(message, type = "info", duration = 3000) {
+  const container = $("toastContainer");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  
+  let content = `<span>${message}</span>`;
+  if (type === "loading") {
+    content += `<div class="toast-spinner"></div>`;
+  }
+  
+  toast.innerHTML = content;
+  container.appendChild(toast);
+
+  // Trigger animation
+  setTimeout(() => toast.classList.add("show"), 10);
+
+  if (type !== "loading" && duration > 0) {
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
+  return {
+    close: () => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    },
+    update: (newMessage, newType) => {
+      toast.className = `toast ${newType}`;
+      toast.innerHTML = `<span>${newMessage}</span>${newType === "loading" ? '<div class="toast-spinner"></div>' : ""}`;
+    }
+  };
+}
 function esc(v = "") { return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
 function formatDate(value) { return value ? new Date(value).toLocaleString() : "n/a"; }
 function recentStamp(record) {
@@ -205,7 +242,13 @@ async function refreshAnalytics() {
 function renderGroups() {
   $("groupSiteChecks").innerHTML = state.sites.map((site) => `<label><input name="groupSite" type="checkbox" value="${esc(site.id)}" /> ${esc(site.name)}</label>`).join("");
   const q = $("groupSearch").value.trim().toLowerCase();
-  const groups = state.groups.filter((group) => !q || [group.name, group.id, group.description].some((value) => String(value || "").toLowerCase().includes(q)));
+  const filter = $("groupFilter").value;
+  const groups = state.groups.filter((group) => !q || [group.name, group.id, group.description].some((value) => String(value || "").toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const timeA = new Date(a.updated_at || a.created_at).getTime();
+      const timeB = new Date(b.updated_at || b.created_at).getTime();
+      return filter === "oldest" ? timeA - timeB : timeB - timeA;
+    });
   $("groupsList").innerHTML = groups.length ? groups.map((group) => {
     const siteNames = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id).join(", ");
     return `<div class="row"><div><p class="row-title">${esc(group.name)}</p><p class="meta">${recentStamp(group)}</p></div><div class="meta">${esc(siteNames)}</div><div class="actions"><button onclick="editGroup('${esc(group.id)}')" class="secondary">Edit</button><button onclick="deleteGroup('${esc(group.id)}')" class="danger">Delete</button></div></div>`;
@@ -280,10 +323,12 @@ window.convertLog = async function convertLog(logId) {
 window.editGroup = function editGroup(groupId) {
   const group = state.groups.find((item) => item.id === groupId);
   if (!group) return;
+  $("groupModalTitle").textContent = "Edit Group";
   $("groupId").value = group.id;
   $("groupName").value = group.name;
   $("groupDescription").value = group.description || "";
-  document.querySelectorAll("input[name='groupSite']").forEach((input) => input.checked = group.site_ids.includes(input.value));
+  document.querySelectorAll("input[name='groupSite']").forEach((input) => (input.checked = group.site_ids.includes(input.value)));
+  $("groupModal").showModal();
 };
 
 window.deleteGroup = async function deleteGroup(groupId) {
@@ -305,36 +350,54 @@ function switchTab(tabId) {
 
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  $("loginError").textContent = "Signing in...";
+  const toast = showToast("Signing in...", "loading", 0);
+  $("loginError").textContent = "";
   try {
     await auth.signInWithEmailAndPassword($("loginEmail").value, $("loginPassword").value);
-    $("loginError").textContent = "";
-  } catch (err) { $("loginError").textContent = err.message; }
+    toast.update("Authenticated!", "success");
+    setTimeout(() => toast.close(), 2000);
+  } catch (err) {
+    toast.update("Login Failed", "error");
+    setTimeout(() => toast.close(), 3000);
+    $("loginError").textContent = err.message;
+  }
 });
 
-$("showRegisterBtn").addEventListener("click", () => $("registerModal").showModal());
+$("showRegisterBtn").addEventListener("click", () => {
+  $("registerFields").classList.remove("hidden");
+  $("registerSuccess").classList.add("hidden");
+  $("registerForm").reset();
+  $("registerModal").showModal();
+});
 $("closeRegisterBtn").addEventListener("click", () => $("registerModal").close());
 $("registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const toast = showToast("Registering...", "loading", 0);
   const payload = {
     email: $("regEmail").value.trim(),
     password: $("regPassword").value,
     site: {
-      name: $("regSiteName").value.trim(),
-      domain: $("regDomain").value.trim(),
-      helpline_number: $("regHelpline").value.trim(),
-      welcome_message: $("regWelcome").value.trim() || "Hi, how can I help?",
-      fallback_message: $("regFallback").value.trim() || "I could not find the exact answer. Please contact our helpline.",
+      domain: $("regDomain").value.trim()
     },
   };
-  const result = await fetch("/api/register-site-owner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(async (res) => {
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  });
-  state.lastRegisteredSiteId = result.site.id;
-  $("registerSnippetWrap").classList.remove("hidden");
-  renderSnippet("registerSnippet");
-  await auth.signInWithCustomToken(result.firebase_token);
+  try {
+    const result = await fetch("/api/register-site-owner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(async (res) => {
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    });
+    state.lastRegisteredSiteId = result.site.id;
+    $("registerFields").classList.add("hidden");
+    $("registerSuccess").classList.remove("hidden");
+    renderSnippet("registerSnippet");
+    toast.update("Verifying Account...", "loading");
+    await auth.signInWithCustomToken(result.firebase_token);
+    toast.update("Registered!", "success");
+    setTimeout(() => toast.close(), 2000);
+  } catch (err) {
+    toast.update("Registration Failed", "error");
+    setTimeout(() => toast.close(), 3000);
+    alert(err.message);
+  }
 });
 
 $("logoutBtn").addEventListener("click", () => { auth.signOut(); localStorage.removeItem("portal_session"); showLogin(); });
@@ -346,12 +409,22 @@ $("closeFaqModalBtn").addEventListener("click", () => $("faqModal").close());
 $("clearFaqBtn").addEventListener("click", clearFaqForm);
 $("faqSearch").addEventListener("input", renderFaqs);
 $("groupSearch").addEventListener("input", renderGroups);
+$("groupFilter").addEventListener("change", renderGroups);
 $("logSearch").addEventListener("input", renderLogs);
 ["logTypeFilter", "logDateFilter"].forEach((id) => $(id).addEventListener("change", refreshLogs));
 $("faqGroupChooser").addEventListener("change", () => { const id = idFromChooser($("faqGroupChooser").value, state.groups); state.currentGroupId = id; refreshFaqs(); });
 $("faqTargetGroup").addEventListener("input", () => { state.currentGroupId = idFromChooser($("faqTargetGroup").value, state.groups); });
 $("addSiteBtn").addEventListener("click", () => $("siteModal").showModal());
 $("closeSiteModalBtn").addEventListener("click", () => $("siteModal").close());
+
+$("createGroupBtn").addEventListener("click", () => {
+  $("groupModalTitle").textContent = "Add Group";
+  $("groupForm").reset();
+  $("groupId").value = "";
+  document.querySelectorAll("input[name='groupSite']").forEach((input) => (input.checked = false));
+  $("groupModal").showModal();
+});
+$("closeGroupModalBtn").addEventListener("click", () => $("groupModal").close());
 
 $("settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -431,7 +504,7 @@ $("faqForm").addEventListener("submit", async (e) => {
 $("groupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const groupId = $("groupId").value.trim();
-  const payload = { id: groupId || undefined, name: $("groupName").value.trim(), description: $("groupDescription").value.trim(), site_ids: selectedCheckboxValues("groupSite"), active: true };
+  const payload = { id: groupId || undefined, name: $("groupName").value.trim(), description: $("groupDescription").value.trim(), site_ids: selectedCheckboxValues("groupSite") };
   const prev = [...state.groups];
   try {
     if (groupId && state.groups.some((group) => group.id === groupId)) {
@@ -448,13 +521,23 @@ $("groupForm").addEventListener("submit", async (event) => {
       state.groups = state.groups.map((group) => group.id === temp.id ? created : group);
     }
     $("groupForm").reset();
+    $("groupModal").close();
     renderReferenceControls();
     renderGroups();
   } catch (error) { state.groups = prev; renderGroups(); alert(error.message); }
 });
 
-$("copySnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("snippetCode").textContent));
-$("copyRegisterSnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("registerSnippet").textContent));
+$("copySnippetBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText($("snippetCode").textContent);
+  showToast("Snippet copied!", "success");
+});
+
+$("copyRegisterSnippetBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText($("registerSnippet").textContent);
+  showToast("Snippet copied!", "success");
+});
+
+$("finishRegisterBtn").addEventListener("click", () => $("registerModal").close());
 
 $("leadForm").addEventListener("submit", async (e) => {
   e.preventDefault();

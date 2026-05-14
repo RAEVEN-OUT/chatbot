@@ -347,6 +347,48 @@ def get_site_analytics(
     }
 
 
+@router.get("/groups/{group_id}/analytics")
+def get_group_analytics(
+    group_id: str,
+    repository: Repository = Depends(get_repo),
+    principal: AdminPrincipal = Depends(require_admin),
+):
+    group = repository.get_group(group_id)
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    _require_group_access(group, principal)
+
+    all_logs = []
+    for site_id in group.site_ids:
+        all_logs.extend(repository.list_logs(site_id=site_id, limit=200))
+
+    total = len(all_logs)
+    faq_hits = sum(1 for log in all_logs if log.response_type == ResponseType.faq_hit)
+    llm_fallbacks = sum(1 for log in all_logs if log.response_type == ResponseType.llm_fallback)
+    helpline_escapes = sum(1 for log in all_logs if log.response_type == ResponseType.helpline)
+    hit_rate = round((faq_hits / total * 100), 1) if total else 0
+    llm_rate = round((llm_fallbacks / total * 100), 1) if total else 0
+    helpline_rate = round((helpline_escapes / total * 100), 1) if total else 0
+
+    from collections import Counter
+
+    faq_counter = Counter(log.matched_faq_id for log in all_logs if log.matched_faq_id)
+    top_faqs = []
+    for faq_id, count in faq_counter.most_common(5):
+        faq = repository.get_faq(faq_id)
+        top_faqs.append({"question": faq.question if faq else faq_id, "count": count})
+
+    return {
+        "total_queries": total,
+        "faq_hits": faq_hits,
+        "hit_rate": hit_rate,
+        "llm_fallbacks": llm_fallbacks,
+        "llm_rate": llm_rate,
+        "helpline_rate": helpline_rate,
+        "top_faqs": top_faqs,
+    }
+
+
 @router.get("/logs")
 def list_logs(
     site_id: str | None = None,
@@ -416,8 +458,30 @@ def register_site_owner(
     faq_service: FaqService = Depends(get_faq_service),
 ):
     try:
+        site_data = payload.site
+        # If name or ID is missing, generate it from the domain
+        if (not site_data.name or not site_data.id) and site_data.domain:
+            # Clean domain: remove http, www, and trailing slashes
+            clean_domain = (
+                site_data.domain.lower()
+                .replace("https://", "")
+                .replace("http://", "")
+                .replace("www.", "")
+                .split("/")[0]
+            )
+            base_name = clean_domain.split(".")[0]
+            if not site_data.id:
+                site_data.id = base_name
+            if not site_data.name:
+                site_data.name = base_name.capitalize()
+        
+        if not site_data.name:
+            site_data.name = "New Chatbot"
+        if not site_data.helpline_number:
+            site_data.helpline_number = "Not set"
+
         user = auth.create_user(email=payload.email, password=payload.password)
-        site = faq_service.create_site(payload.site)
+        site = faq_service.create_site(site_data)
         auth.set_custom_user_claims(user.uid, {"site_ids": [site.id]})
         token = auth.create_custom_token(user.uid, {"site_ids": [site.id]})
         return {

@@ -24,41 +24,58 @@
     <header class="topbar">
       <div class="topbar-left">
         <h1>FAQ Chatbot Admin</h1>
-        <span id="globalLoading" class="loading-spinner" style="display:none;">Processing...</span>
+        <p id="statusText" class="meta"></p>
       </div>
-      <p id="statusText"></p>
-      <div class="topbar-actions">
+        <div class="topbar-right">
+        <span id="globalLoading" class="loading-spinner" style="display:none;">Processing...</span>
         <span id="userEmail"></span>
-        <button id="logoutBtn" type="button" style="display:none;">Log Out</button>
+        <button id="logoutBtn" type="button">Log Out</button>
       </div>
     </header>
 
     <main class="layout" id="mainLayout" style="display:none;">
       <aside class="sidebar">
-        <button id="refreshBtn" type="button">Refresh</button>
+        <div class="sidebar-header">
+          <div class="context-toggle">
+            <button id="toggleSitesBtn" class="toggle-btn active" type="button">Sites</button>
+            <button id="toggleGroupsBtn" class="toggle-btn" type="button">Groups</button>
+          </div>
+          <div id="selectionArea">
+            <div id="noSelectionPrompt">
+              <button id="initialSelectBtn" class="primary span-all" style="width: 100%;">Select Site</button>
+            </div>
+            <div id="selectionBar" class="selection-display hidden">
+              <div class="selection-info">
+                <span id="selectionLabel" class="meta">Selected Site</span>
+                <p id="selectedName"></p>
+              </div>
+              <button id="openSwitchBtn" class="icon-btn" title="Switch Selection">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4l4 4m6-4v12m0 0l4-4m-4 4l-4-4"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
         <nav class="tabs" aria-label="Admin sections">
-          <button class="tab active" data-tab="sites" type="button">Sites</button>
-          <button class="tab" data-tab="groups" type="button">Groups</button>
+          <button class="tab active" data-tab="analytics" type="button">Analytics</button>
           <button class="tab" data-tab="faqs" type="button">FAQs</button>
           <button class="tab" data-tab="logs" type="button">Logs</button>
-          <button class="tab" data-tab="analytics" type="button">Analytics</button>
+          <button class="tab" data-tab="sites" type="button">Sites</button>
+          <button class="tab" data-tab="groups" type="button">Groups</button>
           <button class="tab" data-tab="users" type="button">Users</button>
           <button class="tab" data-tab="tester" type="button">Tester</button>
         </nav>
       </aside>
 
       <section class="content">
-        <section id="sites" class="panel active-panel">
+        <section id="sites" class="panel">
           <div class="panel-heading">
             <h2>Sites</h2>
             <div class="toolbar">
-              <input id="siteSearch" placeholder="Search sites" />
               <select id="siteFilter">
                 <option value="active">Active</option>
-                <option value="deleted">Deleted</option>
-                <option value="all">All</option>
+                <option value="deleted">Recently Deleted</option>
               </select>
-              <button id="createSiteBtn" type="button">Create Site</button>
+              <button id="addSiteBtn" type="button">Add Site</button>
             </div>
           </div>
           <div id="sitesList" class="table"></div>
@@ -68,37 +85,20 @@
           <div class="panel-heading">
             <h2>Groups</h2>
             <div class="toolbar">
-              <input id="groupSearch" placeholder="Search groups" />
               <select id="groupFilter">
-                <option value="all">All</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
+                <option value="latest">Latest</option>
+                <option value="oldest">Oldest</option>
               </select>
+              <button id="createGroupBtn" type="button">Create Group</button>
             </div>
           </div>
-          <form id="groupForm" class="form-grid">
-            <input id="groupId" placeholder="group id, optional" />
-            <input id="groupName" placeholder="Group name" required />
-            <input id="groupDescription" placeholder="Description" />
-            <div class="span-all">
-              <label>Sites in group</label>
-              <input id="groupSiteSearch" placeholder="Search sites" />
-              <div id="groupSiteChecks" class="check-grid"></div>
-            </div>
-            <button type="submit">Save Group</button>
-          </form>
           <div id="groupsList" class="table"></div>
         </section>
 
         <section id="faqs" class="panel">
           <div class="panel-heading">
             <h2>FAQs</h2>
-            <div class="toolbar">
-              <input id="faqSearch" placeholder="Search FAQs" />
-              <input id="faqSiteChooser" list="siteOptions" placeholder="Choose site" />
-              <input id="faqGroupChooser" list="groupOptions" placeholder="Choose group" />
-              <button id="createFaqBtn" type="button">Add FAQ</button>
-            </div>
+            <button id="createFaqBtn" type="button">Add FAQ</button>
           </div>
           <div id="faqsList" class="faq-list"></div>
         </section>
@@ -107,7 +107,6 @@
           <div class="panel-heading">
             <h2>Logs</h2>
             <div class="toolbar">
-              <input id="logSearch" placeholder="Search logs" />
               <select id="logTypeFilter">
                 <option value="">All types</option>
                 <option value="faq_hit">FAQ hit</option>
@@ -120,16 +119,15 @@
                 <option value="7d">Last week</option>
                 <option value="30d">Last month</option>
               </select>
-              <label class="checkbox-row"><input id="fallbackOnly" type="checkbox" /> Hide FAQ hits</label>
+              <label class="checkbox-row"><input id="fallbackOnly" type="checkbox" /> Fallbacks</label>
             </div>
           </div>
           <div id="logsList" class="log-list"></div>
         </section>
 
-        <section id="analytics" class="panel">
+        <section id="analytics" class="panel active-panel">
           <div class="panel-heading">
             <h2>Analytics</h2>
-            <input id="analyticsSiteChooser" list="siteOptions" placeholder="Choose site" style="max-width:260px;" />
           </div>
           <div class="analytics-grid">
             <div class="stat-card"><h3>Total Queries</h3><p id="statTotal">0</p></div>
@@ -158,10 +156,7 @@
         <section id="tester" class="panel">
           <div class="panel-heading">
             <h2>Tester</h2>
-            <div class="toolbar">
-              <input id="testerSiteChooser" list="siteOptions" placeholder="Choose site" />
-              <span id="testerSiteName" class="meta">No site selected</span>
-            </div>
+            <span id="testerSiteName" class="meta">No site selected</span>
           </div>
           <div id="testMessages" class="messages"></div>
           <form id="leadForm" class="form-grid">
@@ -218,18 +213,56 @@
           <button id="closeFaqModalBtn" type="button" class="ghost">Close</button>
         </div>
         <input id="faqId" type="hidden" />
-        <input id="faqTargetSite" list="siteOptions" placeholder="Target site" />
-        <input id="faqTargetGroup" list="groupOptions" placeholder="Target group" />
         <input id="faqQuestion" placeholder="Question" required />
         <textarea id="faqAliases" placeholder="Aliases, one per line"></textarea>
         <textarea id="faqAnswer" placeholder="Exact answer to return" required></textarea>
-        <div class="form-actions">
-          <button type="submit">Save FAQ</button>
-          <button id="clearFaqBtn" type="button">Clear</button>
+        
+        <div class="form-actions" style="display: flex; justify-content: flex-end; align-items: center; gap: 15px; margin-top: 20px;">
+          <p id="faqDeleteConfirmText" class="hidden" style="color: #c53030; font-weight: 600; margin: 0;">
+            Are you sure you want to delete this FAQ?
+          </p>
+          <button id="faqSaveBtn" type="submit">Save FAQ</button>
+          <button id="faqDeleteBtn" type="button" class="danger hidden">Delete FAQ</button>
         </div>
       </form>
     </dialog>
 
+    <dialog id="groupModal" class="modal">
+      <form id="groupForm" class="form-grid modal-body">
+        <div class="modal-title span-all">
+          <h2 id="groupModalTitle">Create Group</h2>
+          <button id="closeGroupModalBtn" type="button" class="ghost">Close</button>
+        </div>
+        <input id="groupId" placeholder="group id, optional" />
+        <input id="groupName" placeholder="Group name" required />
+        <input id="groupDescription" placeholder="Description" class="span-all" />
+        <div class="span-all">
+          <label>Sites in group</label>
+          <input id="groupSiteSearch" placeholder="Search sites" style="margin-bottom: 8px;" />
+          <div id="groupSiteChecks" class="check-grid"></div>
+        </div>
+        <div class="form-actions span-all">
+          <button type="submit">Save Group</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="selectionModal" class="modal">
+      <div class="modal-body">
+        <div class="modal-title">
+          <h2 id="selectionModalTitle">Select Site</h2>
+          <button id="closeSelectionModalBtn" type="button" class="ghost">Close</button>
+        </div>
+        <div class="toolbar" style="margin-bottom: 16px;">
+          <input id="selectionSearch" placeholder="Search..." autocomplete="off" />
+        </div>
+        <div id="selectionList" class="selection-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </dialog>
+
+    <div id="toastContainer" class="toast-container"></div>
     <script src="./app.js"></script>
   </body>
 </html>

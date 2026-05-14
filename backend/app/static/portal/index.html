@@ -98,18 +98,15 @@
         <section id="groups" class="panel">
           <div class="panel-heading">
             <h2>Groups</h2>
-            <input id="groupSearch" placeholder="Search groups" style="max-width:260px;" />
-          </div>
-          <form id="groupForm" class="form-grid">
-            <input id="groupId" placeholder="group id, optional" />
-            <input id="groupName" placeholder="Group name" required />
-            <input id="groupDescription" placeholder="Description" />
-            <div class="span-all">
-              <label>Sites in group</label>
-              <div id="groupSiteChecks" class="check-grid"></div>
+            <div class="toolbar">
+              <input id="groupSearch" placeholder="Search groups" />
+              <select id="groupFilter">
+                <option value="latest">Latest</option>
+                <option value="oldest">Oldest</option>
+              </select>
+              <button id="createGroupBtn" type="button">Add Group</button>
             </div>
-            <button type="submit">Save Group</button>
-          </form>
+          </div>
           <div id="groupsList" class="table"></div>
         </section>
 
@@ -163,18 +160,30 @@
 
     <dialog id="registerModal" class="modal">
       <form id="registerForm" class="form-grid modal-body">
-        <div class="modal-title span-all"><h2>Register Chatbot</h2><button id="closeRegisterBtn" type="button" class="ghost">Close</button></div>
-        <input id="regEmail" type="email" placeholder="Email" required />
-        <input id="regPassword" type="password" placeholder="Password" required />
-        <input id="regSiteName" placeholder="Site name" required />
-        <input id="regDomain" placeholder="Domain" />
-        <input id="regHelpline" placeholder="Helpline number" required />
-        <input id="regWelcome" placeholder="Welcome message" />
-        <input id="regFallback" placeholder="Fallback message" />
-        <button type="submit" class="span-all">Create Chatbot</button>
-        <div id="registerSnippetWrap" class="span-all hidden">
-          <pre id="registerSnippet" class="snippet-box"></pre>
-          <button id="copyRegisterSnippetBtn" type="button">Copy Snippet</button>
+        <div class="modal-title span-all">
+          <h2>Register Chatbot</h2>
+          <button id="closeRegisterBtn" type="button" class="ghost">Close</button>
+        </div>
+        
+        <div id="registerFields" class="form-grid span-all" style="border:0; padding:0; box-shadow:none; margin:0;">
+          <input id="regEmail" type="email" placeholder="Email" required />
+          <input id="regPassword" type="password" placeholder="Password" required />
+          <input id="regDomain" placeholder="Domain (e.g. example.com)" required />
+          <button type="submit" class="span-all">Create Chatbot</button>
+        </div>
+
+        <div id="registerSuccess" class="span-all hidden">
+          <div class="success-message">
+            <p><strong>Success! Your chatbot is ready.</strong></p>
+            <p class="meta">Copy the code below and paste it just before the <code>&lt;/body&gt;</code> tag on your website.</p>
+          </div>
+          <div class="snippet-wrap">
+            <pre id="registerSnippet" class="snippet-box"></pre>
+            <button id="copyRegisterSnippetBtn" type="button" class="primary">Copy Code</button>
+          </div>
+          <div style="margin-top: 20px; text-align: center;">
+            <button id="finishRegisterBtn" type="button">Go to Dashboard</button>
+          </div>
         </div>
       </form>
     </dialog>
@@ -203,6 +212,26 @@
       </form>
     </dialog>
 
+    <dialog id="groupModal" class="modal">
+      <form id="groupForm" class="form-grid modal-body">
+        <div class="modal-title span-all">
+          <h2 id="groupModalTitle">Add Group</h2>
+          <button id="closeGroupModalBtn" type="button" class="ghost">Close</button>
+        </div>
+        <input id="groupId" placeholder="group id, optional" />
+        <input id="groupName" placeholder="Group name" required />
+        <input id="groupDescription" placeholder="Description" class="span-all" />
+        <div class="span-all">
+          <label>Sites in group</label>
+          <div id="groupSiteChecks" class="check-grid"></div>
+        </div>
+        <div class="form-actions span-all">
+          <button type="submit">Save Group</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toastContainer" class="toast-container"></div>
     <script src="./app.js"></script>
   </body>
 </html>

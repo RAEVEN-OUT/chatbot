@@ -1,3 +1,7 @@
+.hidden {
+  display: none !important;
+}
+
 :root {
   color-scheme: light;
   --bg: #f6f7f9;
@@ -112,9 +116,125 @@ label {
 }
 
 .sidebar {
-  background: #fbfcfc;
+  background: var(--surface);
   border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 0; /* Remove default padding to allow header to span full width */
+}
+
+.sidebar-header {
+  border-bottom: 1px solid var(--line);
   padding: 20px;
+}
+
+.context-toggle {
+  background: var(--surface-2);
+  border-radius: 12px;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 32px;
+  padding: 4px 8px;
+  transition: all 0.2s;
+}
+
+.toggle-btn.active {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(18, 108, 87, 0.2);
+}
+
+.selection-display {
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.selection-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.selection-info #selectedName {
+  font-weight: 800;
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--brand);
+  cursor: pointer;
+  display: flex;
+  padding: 8px;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+#initialSelectBtn {
+  margin-top: 10px;
+}
+
+.sidebar .tabs {
+  padding: 20px;
+}
+
+.selection-list {
+  display: grid;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.selection-item {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 16px;
+  transition: all 0.2s;
+}
+
+.selection-item:hover {
+  background: var(--surface-2);
+  border-color: var(--brand);
+}
+
+.selection-item.active {
+  background: #def7ec;
+  border-color: var(--brand);
 }
 
 .sidebar > button,
@@ -278,6 +398,28 @@ label {
   height: 16px;
   min-height: 16px;
   width: 16px;
+}
+
+.faq-item.is-saving {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.item-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--brand);
+  transform: translateX(-100%);
+  animation: item-loading 2s infinite ease-in-out;
+}
+
+@keyframes item-loading {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(0); }
+  100% { transform: translateX(100%); }
 }
 
 .target-box {
@@ -498,7 +640,7 @@ label {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: var(--bg); /* Opaque background */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -531,4 +673,55 @@ label {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10000;
+}
+
+.toast {
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-left: 4px solid var(--brand);
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transform: translateX(120%);
+  transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+.toast.show {
+  transform: translateX(0);
+}
+
+.toast.info { border-left-color: var(--brand-2); }
+.toast.success { border-left-color: #22c55e; }
+.toast.error { border-left-color: var(--danger); }
+.toast.loading { border-left-color: var(--line); }
+
+.toast-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(0,0,0,0.1);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 10px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

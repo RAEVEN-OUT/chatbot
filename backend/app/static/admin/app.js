@@ -80,6 +80,7 @@ async function createHandoffAndRedirect(idToken) {
       $("userEmail").textContent = user.email;
       $("logoutBtn").style.display = "inline-block";
       hideLogin();
+      showToast("Access Verified", "success");
       initAdminDashboard();
     } catch (error) {
       console.error(error);
@@ -164,7 +165,45 @@ function setGlobalLoading(isLoading) {
 }
 
 function setStatus(text) {
-  $("statusText").textContent = text;
+  const el = $("statusText");
+  if (el) el.textContent = text;
+}
+
+function showToast(message, type = "info", duration = 3000) {
+  const container = $("toastContainer");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  
+  let content = `<span>${message}</span>`;
+  if (type === "loading") {
+    content += `<div class="toast-spinner"></div>`;
+  }
+  
+  toast.innerHTML = content;
+  container.appendChild(toast);
+
+  // Trigger animation
+  setTimeout(() => toast.classList.add("show"), 10);
+
+  if (type !== "loading" && duration > 0) {
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+
+  return {
+    close: () => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    },
+    update: (newMessage, newType) => {
+      toast.className = `toast ${newType}`;
+      toast.innerHTML = `<span>${newMessage}</span>${newType === "loading" ? '<div class="toast-spinner"></div>' : ""}`;
+    }
+  };
 }
 
 function esc(value = "") {
@@ -223,15 +262,11 @@ async function refreshAll() {
     state.principal = me;
     state.sites = sites;
     state.groups = groups;
-    if (!state.currentSiteId && state.sites.find((site) => !site.deleted_at)) {
-      state.currentSiteId = state.sites.find((site) => !site.deleted_at).id;
-    }
     renderReferenceControls();
     renderSites();
     renderGroups();
     renderUserSites();
     syncChoosers();
-    setStatus(`${state.sites.length} sites, ${state.groups.length} groups`);
     refreshFaqs();
     refreshLogs();
     refreshAnalytics();
@@ -241,11 +276,27 @@ async function refreshAll() {
 }
 
 function syncChoosers() {
-  const site = currentSite();
-  const value = siteDisplay(site);
-  ["faqSiteChooser", "analyticsSiteChooser", "testerSiteChooser"].forEach((id) => {
-    if ($(id)) $(id).value = value;
-  });
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+  
+  if (!currentId) {
+    $("noSelectionPrompt").classList.remove("hidden");
+    $("selectionBar").classList.add("hidden");
+    $("initialSelectBtn").textContent = isSite ? "Select Site" : "Select Group";
+  } else {
+    $("noSelectionPrompt").classList.add("hidden");
+    $("selectionBar").classList.remove("hidden");
+    
+    if (isSite) {
+      const site = currentSite();
+      $("selectionLabel").textContent = "Selected Site";
+      $("selectedName").textContent = site ? site.name : "Unknown Site";
+    } else {
+      const group = state.groups.find(g => g.id === state.currentGroupId);
+      $("selectionLabel").textContent = "Selected Group";
+      $("selectedName").textContent = group ? group.name : "Unknown Group";
+    }
+  }
   updateTesterSiteName();
 }
 
@@ -277,27 +328,27 @@ function filteredSites() {
 function renderSites() {
   const sites = filteredSites();
   $("sitesList").innerHTML = sites.length
-    ? sites.map((site) => `
-        <div class="row ${site.deleted_at ? "is-muted" : ""}">
-          <div>
+    ? sites.map((site) => {
+        const isSaving = String(site.id).startsWith("saving-");
+        return `
+        <div class="row ${isSaving ? "is-saving" : ""}" style="position:relative; overflow:hidden;">
+          <div class="row-info">
             <p class="row-title">${esc(site.name)}</p>
             <p class="meta">${esc(site.id)} | ${esc(site.domain || "no domain")}</p>
             <p class="meta">${recentStamp(site)} ${site.deleted_at ? "| " + deletionText(site) : ""}</p>
           </div>
-          <div class="meta">${esc(site.helpline_number || "no helpline")}</div>
-          <div class="actions">
-            <button class="ghost" onclick="editSite('${esc(site.id)}')">Select</button>
-            <button class="secondary" onclick="openSitePortal('${esc(site.id)}')" ${site.deleted_at ? "disabled" : ""}>Open Portal</button>
+          <div class="row-actions">
+            <button class="ghost" onclick="editSite('${esc(site.id)}')" ${isSaving ? "disabled" : ""}>Select</button>
+            <button class="secondary" onclick="openSitePortal('${esc(site.id)}')" ${site.deleted_at || isSaving ? "disabled" : ""}>Open Portal</button>
           </div>
-        </div>`).join("")
+          ${isSaving ? '<div class="item-progress"></div>' : ""}
+        </div>`;
+      }).join("")
     : `<p class="meta">No sites found.</p>`;
 }
 
 function groupMatches(group) {
   const query = $("groupSearch").value.trim().toLowerCase();
-  const filter = $("groupFilter").value;
-  if (filter === "active" && group.active === false) return false;
-  if (filter === "inactive" && group.active !== false) return false;
   if (!query) return true;
   const siteNames = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id).join(" ");
   return [group.name, group.id, group.description, siteNames].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
@@ -305,22 +356,27 @@ function groupMatches(group) {
 
 function renderGroups() {
   $("groupSiteChecks").innerHTML = siteCheckboxes("groupSite", selectedCheckboxValues("groupSite"), $("groupSiteSearch").value);
-  const groups = state.groups.filter(groupMatches).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const filter = $("groupFilter").value;
+  const groups = state.groups.filter(groupMatches).sort((a, b) => {
+    const timeA = new Date(a.updated_at || a.created_at).getTime();
+    const timeB = new Date(b.updated_at || b.created_at).getTime();
+    return filter === "oldest" ? timeA - timeB : timeB - timeA;
+  });
   $("groupsList").innerHTML = groups.length
     ? groups.map((group) => {
-        const siteNames = group.site_ids.map((siteId) => state.sites.find((site) => site.id === siteId)?.name || siteId).join(", ");
+        const isSaving = String(group.id).startsWith("saving-");
         return `
-          <div class="row">
-            <div>
-              <p class="row-title">${esc(group.name)}</p>
-              <p class="meta">${esc(group.id)} | ${recentStamp(group)}</p>
-            </div>
-            <div class="meta">${esc(siteNames || "No sites")}</div>
-            <div class="actions">
-              <button class="secondary" onclick="editGroup('${esc(group.id)}')">Edit</button>
-              <button class="danger" onclick="deleteGroup('${esc(group.id)}')">Delete</button>
-            </div>
-          </div>`;
+        <div class="row ${isSaving ? "is-saving" : ""}" style="position:relative; overflow:hidden;">
+          <div>
+            <p class="row-title">${esc(group.name)}</p>
+            <p class="meta">${esc(group.id)} | ${recentStamp(group)}</p>
+          </div>
+          <div class="actions">
+            <button class="secondary" onclick="editGroup('${esc(group.id)}')" ${isSaving ? "disabled" : ""}>Edit</button>
+            <button class="danger" onclick="deleteGroup('${esc(group.id)}')" ${isSaving ? "disabled" : ""}>Delete</button>
+          </div>
+          ${isSaving ? '<div class="item-progress"></div>' : ""}
+        </div>`;
       }).join("")
     : `<p class="meta">No groups found.</p>`;
 }
@@ -347,27 +403,43 @@ function renderUserSites() {
 }
 
 async function refreshFaqs() {
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+
+  if (!currentId) {
+    state.faqs = [];
+    renderFaqs();
+    return;
+  }
+
   const params = new URLSearchParams();
-  if (state.currentGroupId) params.set("group_id", state.currentGroupId);
-  else if (state.currentSiteId) params.set("site_id", state.currentSiteId);
-  const faqs = await api(`/api/faqs${params.toString() ? "?" + params.toString() : ""}`);
-  state.faqs = faqs;
-  renderFaqs();
+  if (isSite) params.set("site_id", currentId);
+  else params.set("group_id", currentId);
+
+  try {
+    const faqs = await api(`/api/faqs?${params.toString()}`);
+    state.faqs = faqs;
+    renderFaqs();
+  } catch (err) {
+    state.faqs = [];
+    renderFaqs();
+  }
 }
 
 function renderFaqs() {
-  const query = $("faqSearch").value.trim().toLowerCase();
+  const query = $("faqSearch")?.value?.trim()?.toLowerCase() || "";
   const faqs = state.faqs.filter((faq) => {
     if (!query) return true;
     return [faq.question, faq.answer, faq.id, ...(faq.aliases || [])].some((value) => String(value || "").toLowerCase().includes(query));
   });
   $("faqsList").innerHTML = faqs.length
     ? faqs.map((faq) => {
+        const isSaving = String(faq.id).startsWith("saving-");
         const target = faq.site_id
           ? `Site: ${state.sites.find((site) => site.id === faq.site_id)?.name || faq.site_id}`
           : `Group: ${state.groups.find((group) => group.id === faq.group_id)?.name || faq.group_id}`;
         return `
-          <article class="faq-item">
+          <article class="faq-item ${isSaving ? "is-saving" : ""}">
             <div>
               <h3>${esc(faq.question)}</h3>
               <p class="meta">${esc(target)} | ${recentStamp(faq)}</p>
@@ -375,26 +447,46 @@ function renderFaqs() {
             <div class="faq-answer">${esc(faq.answer)}</div>
             <p class="meta">Aliases: ${esc((faq.aliases || []).join(", ") || "none")}</p>
             <div class="actions">
-              <button class="secondary" onclick="editFaq('${esc(faq.id)}')">Edit</button>
-              <button class="danger" onclick="deleteFaq('${esc(faq.id)}')">Delete</button>
+              <button class="secondary" onclick="editFaq('${esc(faq.id)}')" ${isSaving ? "disabled" : ""}>Edit</button>
+              <button class="danger" onclick="deleteFaq('${esc(faq.id)}')" ${isSaving ? "disabled" : ""}>Delete</button>
             </div>
+            ${isSaving ? '<div class="item-progress"></div>' : ""}
           </article>`;
       }).join("")
     : `<p class="meta">No FAQs found.</p>`;
 }
 
 async function refreshLogs() {
-  const params = new URLSearchParams({ limit: "200" });
-  if (state.currentSiteId) params.set("site_id", state.currentSiteId);
-  if ($("fallbackOnly").checked) params.set("fallback_only", "true");
-  if ($("logTypeFilter").value) params.set("response_type", $("logTypeFilter").value);
-  if ($("logDateFilter").value) params.set("since", $("logDateFilter").value);
-  state.logs = state.currentSiteId ? await api(`/api/logs?${params.toString()}`) : [];
-  renderLogs();
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+
+  if (!currentId) {
+    state.logs = [];
+    renderLogs();
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (isSite) params.set("site_id", currentId);
+  else params.set("group_id", currentId);
+
+  const type = $("logTypeFilter")?.value;
+  const dateRange = $("logDateFilter")?.value;
+  if (type) params.set("type", type);
+  if (dateRange) params.set("date_range", dateRange);
+
+  try {
+    const logs = await api(`/api/logs?${params.toString()}`);
+    state.logs = logs;
+    renderLogs();
+  } catch (err) {
+    state.logs = [];
+    renderLogs();
+  }
 }
 
 function renderLogs() {
-  const query = $("logSearch").value.trim().toLowerCase();
+  const query = $("logSearch")?.value?.trim()?.toLowerCase() || "";
   const logs = state.logs.filter((log) => !query || [log.question, log.answer, log.email, log.phone, log.user_name].some((value) => String(value || "").toLowerCase().includes(query)));
   $("logsList").innerHTML = logs.length
     ? logs.map((log) => `
@@ -411,20 +503,43 @@ function renderLogs() {
 }
 
 async function refreshAnalytics() {
-  if (!state.currentSiteId) return;
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+
+  const resetStats = () => {
+    if ($("statTotal")) $("statTotal").textContent = "0";
+    if ($("statHitRate")) $("statHitRate").textContent = "0%";
+    if ($("statFaqHits")) $("statFaqHits").textContent = "0 hits";
+    if ($("statLlmRate")) $("statLlmRate").textContent = "0%";
+    if ($("statLlmHits")) $("statLlmHits").textContent = "0 fallbacks";
+    if ($("statHelplineRate")) $("statHelplineRate").textContent = "0%";
+    if ($("topFaqsList")) $("topFaqsList").innerHTML = "";
+  };
+
+  if (!currentId) {
+    resetStats();
+    return;
+  }
+
+  const url = isSite ? `/api/sites/${currentId}/analytics` : `/api/groups/${currentId}/analytics`;
+
   try {
-    const data = await api(`/api/sites/${state.currentSiteId}/analytics`);
-    $("statTotal").textContent = data.total_queries;
-    $("statHitRate").textContent = `${data.hit_rate}%`;
-    $("statFaqHits").textContent = `${data.faq_hits} hits`;
-    $("statLlmRate").textContent = `${data.llm_rate}%`;
-    $("statLlmHits").textContent = `${data.llm_fallbacks} fallbacks`;
-    $("statHelplineRate").textContent = `${data.helpline_rate}%`;
-    $("topFaqsList").innerHTML = data.top_faqs.length
-      ? data.top_faqs.map((faq) => `<div class="row"><p class="row-title">${esc(faq.question)}</p><div class="meta">${faq.count} uses</div><div></div></div>`).join("")
-      : `<p class="meta">No FAQs used yet.</p>`;
-  } catch (error) {
-    console.error(error);
+    const data = await api(url);
+    if ($("statTotal")) $("statTotal").textContent = data.total_queries || 0;
+    if ($("statHitRate")) $("statHitRate").textContent = `${data.hit_rate || 0}%`;
+    if ($("statFaqHits")) $("statFaqHits").textContent = `${data.faq_hits || 0} hits`;
+    if ($("statLlmRate")) $("statLlmRate").textContent = `${data.llm_rate || 0}%`;
+    if ($("statLlmHits")) $("statLlmHits").textContent = `${data.llm_fallbacks || 0} fallbacks`;
+    if ($("statHelplineRate")) $("statHelplineRate").textContent = `${data.helpline_rate || 0}%`;
+    
+    if ($("topFaqsList")) {
+      $("topFaqsList").innerHTML = data.top_faqs?.length
+        ? data.top_faqs.map((faq) => `<div class="row"><p class="row-title">${esc(faq.question)}</p><div class="meta">${faq.count} uses</div><div></div></div>`).join("")
+        : `<p class="meta">No FAQs used yet.</p>`;
+    }
+  } catch (err) {
+    console.error(err);
+    resetStats();
   }
 }
 
@@ -514,10 +629,12 @@ window.openSitePortal = async function openSitePortal(siteId) {
 window.editGroup = function editGroup(groupId) {
   const group = state.groups.find((item) => item.id === groupId);
   if (!group) return;
+  $("groupModalTitle").textContent = "Edit Group";
   $("groupId").value = group.id;
   $("groupName").value = group.name;
   $("groupDescription").value = group.description || "";
   $("groupSiteChecks").innerHTML = siteCheckboxes("groupSite", group.site_ids || [], $("groupSiteSearch").value);
+  $("groupModal").showModal();
 };
 
 window.deleteGroup = async function deleteGroup(groupId) {
@@ -535,12 +652,27 @@ window.deleteGroup = async function deleteGroup(groupId) {
 };
 
 function openCreateFaqModal() {
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+
+  if (!currentId) {
+    showToast(`Please select a ${isSite ? "site" : "group"} first.`, "error");
+    return;
+  }
+
   $("faqModalTitle").textContent = "Add FAQ";
+  setFaqFieldsDisabled(false);
+  $("faqDeleteConfirmText").classList.add("hidden");
+  $("faqSaveBtn").classList.remove("hidden");
+  $("faqDeleteBtn").classList.add("hidden");
   clearFaqForm();
-  const site = currentSite();
-  $("faqTargetSite").value = siteDisplay(site);
-  $("faqTargetGroup").value = "";
   $("faqModal").showModal();
+}
+
+function setFaqFieldsDisabled(disabled) {
+  $("faqQuestion").disabled = disabled;
+  $("faqAliases").disabled = disabled;
+  $("faqAnswer").disabled = disabled;
 }
 
 window.editFaq = function editFaq(faqId) {
@@ -551,25 +683,53 @@ window.editFaq = function editFaq(faqId) {
   $("faqQuestion").value = faq.question;
   $("faqAliases").value = (faq.aliases || []).join("\n");
   $("faqAnswer").value = faq.answer;
-  $("faqTargetSite").value = faq.site_id ? siteDisplay(state.sites.find((site) => site.id === faq.site_id)) : "";
-  $("faqTargetGroup").value = faq.group_id ? groupDisplay(state.groups.find((group) => group.id === faq.group_id)) : "";
+
+  setFaqFieldsDisabled(false);
+  $("faqDeleteConfirmText").classList.add("hidden");
+  $("faqSaveBtn").classList.remove("hidden");
+  $("faqDeleteBtn").classList.add("hidden");
+
   $("faqModal").showModal();
 };
 
-window.deleteFaq = async function deleteFaq(faqId) {
-  if (!confirm("Delete this FAQ?")) return;
+window.deleteFaq = function deleteFaq(faqId) {
+  const faq = state.faqs.find((item) => item.id === faqId);
+  if (!faq) return;
+  $("faqModalTitle").textContent = "Delete FAQ?";
+  $("faqId").value = faq.id;
+  $("faqQuestion").value = faq.question;
+  $("faqAliases").value = (faq.aliases || []).join("\n");
+  $("faqAnswer").value = faq.answer;
+
+  setFaqFieldsDisabled(true);
+  $("faqDeleteConfirmText").classList.remove("hidden");
+  $("faqSaveBtn").classList.add("hidden");
+  $("faqDeleteBtn").classList.remove("hidden");
+  
+  $("faqModal").showModal();
+};
+
+$("faqDeleteBtn").addEventListener("click", async () => {
+  const faqId = $("faqId").value;
+  if (!faqId) return;
+  
   const previous = [...state.faqs];
-  state.faqs = state.faqs.filter((faq) => faq.id !== faqId);
+  state.faqs = state.faqs.filter((f) => f.id !== faqId);
   renderFaqs();
+  $("faqModal").close();
+
   try {
     await api(`/api/faqs/${faqId}`, { method: "DELETE" });
+    showToast("FAQ deleted", "success");
     refreshAnalytics();
   } catch (error) {
     state.faqs = previous;
     renderFaqs();
-    alert(`Delete failed: ${error.message}`);
+    showToast(error.message, "error");
   }
-};
+});
+
+
 
 window.convertLog = async function convertLog(logId) {
   const log = state.logs.find((item) => item.id === logId);
@@ -592,27 +752,50 @@ function clearFaqForm() {
   $("faqAnswer").value = "";
 }
 
-function faqPayload() {
-  const siteId = idFromChooser($("faqTargetSite").value, state.sites);
-  const groupId = idFromChooser($("faqTargetGroup").value, state.groups);
-  const hasSite = Boolean(siteId);
-  const hasGroup = Boolean(groupId);
-  if (hasSite === hasGroup) throw new Error("Choose exactly one target site or one target group.");
-  return {
+$("faqForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const faqId = $("faqId").value.trim();
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+
+  if (!currentId) {
+    showToast("Please select a site or group first.", "error");
+    return;
+  }
+
+  const payload = {
     question: $("faqQuestion").value.trim(),
     answer: $("faqAnswer").value.trim(),
-    aliases: $("faqAliases").value.split("\n").map((item) => item.trim()).filter(Boolean),
-    site_id: hasSite ? siteId : "",
-    group_id: hasGroup ? groupId : "",
-    active: true,
+    aliases: $("faqAliases").value.split("\n").map((s) => s.trim()).filter(Boolean),
+    site_id: isSite ? currentId : "",
+    group_id: !isSite ? currentId : "",
   };
-}
 
-$("faqTargetSite").addEventListener("input", () => {
-  if ($("faqTargetSite").value.trim()) $("faqTargetGroup").value = "";
-});
-$("faqTargetGroup").addEventListener("input", () => {
-  if ($("faqTargetGroup").value.trim()) $("faqTargetSite").value = "";
+  const previous = [...state.faqs];
+  $("faqModal").close();
+  $("faqForm").reset();
+
+  try {
+    if (faqId) {
+      const index = state.faqs.findIndex((f) => f.id === faqId);
+      if (index !== -1) state.faqs[index] = { ...state.faqs[index], ...payload, updated_at: new Date().toISOString() };
+      renderFaqs();
+      const updated = await api(`/api/faqs/${faqId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      state.faqs[index] = updated;
+    } else {
+      const temp = { ...payload, id: `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      state.faqs.unshift(temp);
+      renderFaqs();
+      const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
+      state.faqs = state.faqs.map((f) => (f.id === temp.id ? created : f));
+    }
+    renderFaqs();
+    showToast("FAQ saved!", "success");
+  } catch (error) {
+    state.faqs = previous;
+    renderFaqs();
+    showToast(error.message, "error");
+  }
 });
 
 function updateTesterSiteName() {
@@ -626,12 +809,17 @@ function switchTab(tabId) {
 
 $("loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  $("loginError").textContent = "Checking access...";
+  const toast = showToast("Signing in...", "loading", 0);
+  $("loginError").textContent = "";
   try {
     await auth.signOut();
     localStorage.removeItem("admin_session");
     await auth.signInWithEmailAndPassword($("loginEmail").value, $("loginPassword").value);
+    toast.update("Authenticated!", "success");
+    setTimeout(() => toast.close(), 2000);
   } catch (error) {
+    toast.update("Login Failed", "error");
+    setTimeout(() => toast.close(), 3000);
     $("loginError").textContent = error.message;
     auth.signOut();
   }
@@ -645,51 +833,121 @@ $("logoutBtn").addEventListener("click", () => {
   showLogin();
 });
 
-$("refreshBtn").addEventListener("click", refreshAll);
-$("createSiteBtn").addEventListener("click", openCreateSiteModal);
-$("closeSiteModalBtn").addEventListener("click", () => $("siteModal").close());
-$("createFaqBtn").addEventListener("click", openCreateFaqModal);
-$("closeFaqModalBtn").addEventListener("click", () => $("faqModal").close());
-$("clearFaqBtn").addEventListener("click", clearFaqForm);
+$("refreshBtn") && $("refreshBtn").addEventListener("click", refreshAll);
+$("addSiteBtn") && $("addSiteBtn").addEventListener("click", openCreateSiteModal);
+$("closeSiteModalBtn") && $("closeSiteModalBtn").addEventListener("click", () => $("siteModal").close());
+$("createFaqBtn") && $("createFaqBtn").addEventListener("click", openCreateFaqModal);
+$("closeFaqModalBtn") && $("closeFaqModalBtn").addEventListener("click", () => $("faqModal").close());
+$("clearFaqBtn") && $("clearFaqBtn").addEventListener("click", clearFaqForm);
 
-["siteSearch", "siteFilter"].forEach((id) => $(id).addEventListener("input", renderSites));
-["groupSearch", "groupFilter"].forEach((id) => $(id).addEventListener("input", renderGroups));
-$("groupSiteSearch").addEventListener("input", renderGroups);
-$("userSiteSearch").addEventListener("input", renderUserSites);
-$("faqSearch").addEventListener("input", renderFaqs);
-$("logSearch").addEventListener("input", renderLogs);
-["fallbackOnly", "logTypeFilter", "logDateFilter"].forEach((id) => $(id).addEventListener("change", refreshLogs));
+["siteFilter"].forEach((id) => $(id) && $(id).addEventListener("input", renderSites));
+["groupFilter"].forEach((id) => $(id) && $(id).addEventListener("input", renderGroups));
+$("groupSiteSearch") && $("groupSiteSearch").addEventListener("input", renderGroups);
+$("userSiteSearch") && $("userSiteSearch").addEventListener("input", renderUserSites);
+$("logSearch") && $("logSearch").addEventListener("input", renderLogs);
+["fallbackOnly", "logTypeFilter", "logDateFilter"].forEach((id) => $(id) && $(id).addEventListener("change", refreshLogs));
 
-$("faqSiteChooser").addEventListener("change", () => {
-  const siteId = idFromChooser($("faqSiteChooser").value, state.sites);
-  if (siteId) {
-    $("faqGroupChooser").value = "";
-    selectSite(siteId);
+$("toggleSitesBtn").addEventListener("click", () => {
+  $("toggleSitesBtn").classList.add("active");
+  $("toggleGroupsBtn").classList.remove("active");
+  syncChoosers();
+  refreshFaqs();
+  refreshLogs();
+  refreshAnalytics();
+});
+
+$("toggleGroupsBtn").addEventListener("click", () => {
+  $("toggleGroupsBtn").classList.add("active");
+  $("toggleSitesBtn").classList.remove("active");
+  syncChoosers();
+  refreshFaqs();
+  refreshLogs();
+  refreshAnalytics();
+});
+
+$("openSwitchBtn").addEventListener("click", openSelectionModal);
+$("initialSelectBtn").addEventListener("click", openSelectionModal);
+$("closeSelectionModalBtn").addEventListener("click", () => $("selectionModal").close());
+$("selectionSearch").addEventListener("input", renderSelectionList);
+
+function openSelectionModal() {
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  $("selectionModalTitle").textContent = isSite ? "Select Site" : "Select Group";
+  $("selectionSearch").value = "";
+  renderSelectionList();
+  $("selectionModal").showModal();
+}
+
+function renderSelectionList() {
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const query = $("selectionSearch").value.trim().toLowerCase();
+  const list = $("selectionList");
+  
+  let items = isSite ? state.sites.filter(s => !s.deleted_at) : state.groups;
+  if (query) {
+    items = items.filter(item => 
+      [item.name, item.id].some(v => String(v).toLowerCase().includes(query))
+    );
   }
-});
-$("faqGroupChooser").addEventListener("change", () => {
-  const groupId = idFromChooser($("faqGroupChooser").value, state.groups);
-  if (groupId) {
-    $("faqSiteChooser").value = "";
-    selectGroup(groupId);
+
+  list.innerHTML = items.map(item => `
+    <div class="selection-item ${((isSite ? state.currentSiteId : state.currentGroupId) === item.id) ? "active" : ""}" 
+         onclick="handleSelectionClick('${esc(item.id)}')">
+      <div class="selection-info">
+        <p class="row-title">${esc(item.name)}</p>
+        <p class="meta">${esc(item.id)}</p>
+      </div>
+    </div>
+  `).join("") || `<p class="meta">No items found.</p>`;
+}
+
+window.handleSelectionClick = function(id) {
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  if (isSite) {
+    selectSite(id);
+  } else {
+    selectGroup(id);
   }
-});
-$("analyticsSiteChooser").addEventListener("change", () => {
-  const siteId = idFromChooser($("analyticsSiteChooser").value, state.sites);
-  if (siteId) selectSite(siteId);
-});
-$("testerSiteChooser").addEventListener("change", () => {
-  const siteId = idFromChooser($("testerSiteChooser").value, state.sites);
-  if (siteId) selectSite(siteId);
-});
+  $("selectionModal").close();
+};
+
+function selectSite(id) {
+  state.currentSiteId = id;
+  state.currentGroupId = "";
+  syncChoosers();
+  refreshFaqs();
+  refreshLogs();
+  refreshAnalytics();
+}
+
+function selectGroup(id) {
+  state.currentGroupId = id;
+  state.currentSiteId = "";
+  syncChoosers();
+  refreshFaqs();
+  refreshLogs();
+  refreshAnalytics();
+}
 
 document.querySelectorAll(".tab").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
 
+$("createGroupBtn").addEventListener("click", () => {
+  $("groupModalTitle").textContent = "Create Group";
+  $("groupForm").reset();
+  $("groupId").value = "";
+  $("groupSiteChecks").innerHTML = siteCheckboxes("groupSite", [], $("groupSiteSearch").value);
+  $("groupModal").showModal();
+});
+$("closeGroupModalBtn").addEventListener("click", () => $("groupModal").close());
+
 $("siteForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  $("siteModal").close();
   const siteId = $("siteId").value.trim();
   const payload = sitePayload();
   const previous = [...state.sites];
+  $("siteForm").reset();
+
   try {
     if (siteId) {
       const index = state.sites.findIndex((site) => site.id === siteId);
@@ -712,7 +970,6 @@ $("siteForm").addEventListener("submit", async (event) => {
     renderSites();
     renderUserSites();
     syncChoosers();
-    $("siteModal").close();
   } catch (error) {
     state.sites = previous;
     renderSites();
@@ -727,39 +984,49 @@ $("repairSiteBtn").addEventListener("click", async () => {
   alert(`Reindexed ${result.total_items ?? 0} FAQs.`);
 });
 
-$("deleteSiteBtn").addEventListener("click", async () => {
-  const siteId = $("siteId").value;
-  if (!siteId || !confirm("Delete this site? It will be hidden from users and purged after 7 days.")) return;
+window.deleteSite = async function deleteSite(siteId) {
+  if (!confirm("Delete this site? It will be moved to Recently Deleted.")) return;
   const previous = [...state.sites];
-  const index = state.sites.findIndex((site) => site.id === siteId);
-  if (index !== -1) {
-    const now = new Date().toISOString();
-    state.sites[index] = { ...state.sites[index], active: false, deleted_at: now, updated_at: now };
-    renderSites();
-  }
+  state.sites = state.sites.map((s) => (s.id === siteId ? { ...s, deleted_at: new Date().toISOString() } : s));
+  renderSites();
   try {
-    const deleted = await api(`/api/sites/${siteId}`, { method: "DELETE" });
-    state.sites[index] = deleted;
-    $("siteModal").close();
-    renderSites();
+    await api(`/api/sites/${siteId}`, { method: "DELETE" });
+    showToast("Site deleted", "success");
   } catch (error) {
     state.sites = previous;
     renderSites();
-    alert(`Delete failed: ${error.message}`);
+    showToast(error.message, "error");
   }
-});
+};
+
+window.deleteGroup = async function deleteGroup(groupId) {
+  if (!confirm("Delete this group?")) return;
+  const previous = [...state.groups];
+  state.groups = state.groups.filter((g) => g.id !== groupId);
+  renderGroups();
+  try {
+    await api(`/api/groups/${groupId}`, { method: "DELETE" });
+    showToast("Group deleted", "success");
+  } catch (error) {
+    state.groups = previous;
+    renderGroups();
+    showToast(error.message, "error");
+  }
+};
 
 $("groupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  $("groupModal").close();
   const groupId = $("groupId").value.trim();
   const payload = {
     id: groupId || undefined,
     name: $("groupName").value.trim(),
     description: $("groupDescription").value.trim(),
     site_ids: selectedCheckboxValues("groupSite"),
-    active: true,
   };
   const previous = [...state.groups];
+  $("groupForm").reset();
+
   try {
     if (groupId && state.groups.some((group) => group.id === groupId)) {
       const index = state.groups.findIndex((group) => group.id === groupId);
@@ -774,7 +1041,6 @@ $("groupForm").addEventListener("submit", async (event) => {
       const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
       state.groups = state.groups.map((group) => (group.id === temp.id ? created : group));
     }
-    $("groupForm").reset();
     renderReferenceControls();
     renderGroups();
   } catch (error) {
@@ -784,42 +1050,7 @@ $("groupForm").addEventListener("submit", async (event) => {
   }
 });
 
-$("faqForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  let payload;
-  try {
-    payload = faqPayload();
-  } catch (error) {
-    alert(error.message);
-    return;
-  }
-  const faqId = $("faqId").value.trim();
-  const previous = [...state.faqs];
-  try {
-    if (faqId) {
-      const index = state.faqs.findIndex((faq) => faq.id === faqId);
-      if (index !== -1) {
-        state.faqs[index] = { ...state.faqs[index], ...payload, updated_at: new Date().toISOString() };
-        renderFaqs();
-      }
-      const updated = await api(`/api/faqs/${faqId}`, { method: "PATCH", body: JSON.stringify(payload) });
-      if (index !== -1) state.faqs[index] = updated;
-    } else {
-      const temp = { ...payload, id: `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-      state.faqs.unshift(temp);
-      renderFaqs();
-      const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
-      state.faqs = state.faqs.map((faq) => (faq.id === temp.id ? created : faq));
-    }
-    renderFaqs();
-    $("faqModal").close();
-    refreshAnalytics();
-  } catch (error) {
-    state.faqs = previous;
-    renderFaqs();
-    alert(`Save failed: ${error.message}`);
-  }
-});
+
 
 $("userForm").addEventListener("submit", async (event) => {
   event.preventDefault();
