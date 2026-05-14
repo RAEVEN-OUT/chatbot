@@ -16,7 +16,7 @@ from app.schemas.models import (
 
 
 class Repository(Protocol):
-    def list_sites(self) -> list[SiteRecord]:
+    def list_sites(self, include_deleted: bool = False) -> list[SiteRecord]:
         ...
 
     def get_site(self, site_id: str) -> SiteRecord | None:
@@ -95,6 +95,7 @@ class Repository(Protocol):
         site_id: str | None = None,
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
+        fallback_only: bool = False,
         limit: int = 200,
     ) -> list[ChatLogRecord]:
         ...

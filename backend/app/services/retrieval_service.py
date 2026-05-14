@@ -72,7 +72,7 @@ class RetrievalService:
         )
         site, session = await asyncio.gather(site_task, session_task)
 
-        if not site or not site.active:
+        if not site or not site.active or site.deleted_at is not None:
             return ChatMessageResponse(
                 answer="This chatbot is not active.",
                 response_type=ResponseType.error,
@@ -246,7 +246,7 @@ class RetrievalService:
         )
         site, session = await asyncio.gather(site_task, session_task)
 
-        if not site or not site.active:
+        if not site or not site.active or site.deleted_at is not None:
             yield {
                 "type": "metadata",
                 "answer": "This chatbot is not active.",
