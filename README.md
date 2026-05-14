@@ -12,7 +12,7 @@ This project is a starter implementation for a multi-site chatbot where FAQs are
 - Site-scoped exact-match lookup before embedding/vector search
 - Process-local Firestore cache for site config and hot FAQ vector lookups
 - Process-local Gemini embedding cache for repeated queries
-- Site-scoped admin RBAC via Firebase custom claims
+- Site-scoped owner access via Firebase custom claims
 - Optional Gemini embedding and LLM fallback adapters
 - Firestore repository adapter skeleton
 - In-memory repository for local development
@@ -56,19 +56,29 @@ You do not need keys to run the scaffold locally. For production you will need:
 - `GOOGLE_CLOUD_PROJECT`
 - `GEMINI_API_KEY`
 
-## Admin RBAC
+## Portal Access
 
 Firebase custom claims can scope panel users to one site, many sites, or the whole platform:
 
 ```json
 {
-  "role": "editor",
-  "site_ids": ["demo-site"],
-  "tenant_id": "default"
+  "site_ids": ["demo-site"]
 }
 ```
 
-Roles are `viewer`, `editor`, `admin`, and `super_admin`. Use `site_ids: ["*"]` for all sites. The fallback `ADMIN_API_KEY` and local development mode act as `super_admin`.
+There are no viewer/editor roles in the active API. A normal owner has full access to every site listed in `site_ids`. A platform admin uses `site_ids: ["*"]`.
+
+FAQ targeting is separate from account access. Each FAQ belongs to exactly one site or one group:
+
+```json
+{ "site_id": "demo-site", "group_id": "" }
+```
+
+or:
+
+```json
+{ "site_id": "", "group_id": "common-group" }
+```
 
 ## Retrieval Priority
 
@@ -90,3 +100,6 @@ In your `.env` file, add this line:
 ```bash
 GOOGLE_APPLICATION_CREDENTIALS="firebase-key.json"
 ```
+
+The app resolves that relative path from the project root, so it works even when
+the server process starts inside `backend/`.

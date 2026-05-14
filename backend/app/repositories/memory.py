@@ -50,7 +50,7 @@ class MemoryRepository(Repository):
         sites = list(self.sites.values())
         if not include_deleted:
             sites = [site for site in sites if site.deleted_at is None]
-        return sorted(sites, key=lambda item: item.name.lower())
+        return sorted(sites, key=lambda item: item.updated_at, reverse=True)
 
     def get_site(self, site_id: str) -> SiteRecord | None:
         return self.sites.get(site_id)
@@ -67,7 +67,7 @@ class MemoryRepository(Repository):
         self._rebuild_vector_indexes()
 
     def list_groups(self) -> list[SiteGroupRecord]:
-        return sorted(self.groups.values(), key=lambda item: item.name.lower())
+        return sorted(self.groups.values(), key=lambda item: item.updated_at, reverse=True)
 
     def get_group(self, group_id: str) -> SiteGroupRecord | None:
         return self.groups.get(group_id)

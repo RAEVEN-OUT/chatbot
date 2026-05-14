@@ -24,7 +24,7 @@ def test_exact_alias_returns_faq_answer():
             question="What is XYZ?",
             answer="XYZ is the exact saved answer.",
             aliases=["tell me about xyz", "wht is xyz"],
-            site_ids=[site.id],
+            site_id=site.id,
         )
     )
 
@@ -48,10 +48,10 @@ def test_exact_match_is_scoped_to_site():
         SiteCreate(id="second", name="Second", helpline_number="222")
     )
     faq_service.create_faq(
-        FaqCreate(question="support", answer="First answer.", site_ids=[first_site.id])
+        FaqCreate(question="support", answer="First answer.", site_id=first_site.id)
     )
     faq_service.create_faq(
-        FaqCreate(question="support", answer="Second answer.", site_ids=[second_site.id])
+        FaqCreate(question="support", answer="Second answer.", site_id=second_site.id)
     )
 
     retrieval = RetrievalService(repository, embedder, DisabledLlmService())

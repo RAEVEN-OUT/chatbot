@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from datetime import timedelta
 
 from fastapi import BackgroundTasks
@@ -11,11 +12,11 @@ from app.schemas.models import (
     FaqUpdate,
     FaqVectorRecord,
     SiteCreate,
-    SiteRecord,
-    SiteUpdate,
     SiteGroupCreate,
     SiteGroupRecord,
     SiteGroupUpdate,
+    SiteRecord,
+    SiteUpdate,
     utc_now,
 )
 from app.services.embedding_service import EmbeddingService
@@ -23,12 +24,6 @@ from app.services.text import normalize_text
 
 
 class FaqService:
-<<<<<<< HEAD
-    """Service for managing sites, groups, and FAQs."""
-=======
-    """Simplified service for managing sites, groups, and FAQs."""
->>>>>>> dev
-    
     def __init__(self, repository: Repository, embedder: EmbeddingService) -> None:
         self.repository = repository
         self.embedder = embedder
@@ -68,7 +63,11 @@ class FaqService:
         )
         return self.repository.upsert_site(updated)
 
-    def create_group(self, payload: SiteGroupCreate, background_tasks: BackgroundTasks | None = None) -> SiteGroupRecord:
+    def create_group(
+        self,
+        payload: SiteGroupCreate,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> SiteGroupRecord:
         group_id = payload.id or slugify(payload.name, "group")
         data = model_to_dict(payload)
         data.pop("id", None)
@@ -80,7 +79,12 @@ class FaqService:
             self.reindex_group(saved.id)
         return saved
 
-    def update_group(self, group_id: str, payload: SiteGroupUpdate, background_tasks: BackgroundTasks | None = None) -> SiteGroupRecord | None:
+    def update_group(
+        self,
+        group_id: str,
+        payload: SiteGroupUpdate,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> SiteGroupRecord | None:
         group = self.repository.get_group(group_id)
         if not group:
             return None
@@ -92,26 +96,33 @@ class FaqService:
             self.reindex_group(saved.id)
         return saved
 
-    def create_faq(self, payload: FaqCreate, background_tasks: BackgroundTasks | None = None) -> FaqRecord:
+    def create_faq(
+        self,
+        payload: FaqCreate,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> FaqRecord:
         faq_id = payload.id or new_id("faq")
         data = model_to_dict(payload)
         data.pop("id", None)
         faq = FaqRecord(id=faq_id, **data)
         saved = self.repository.upsert_faq(faq)
-        
         if background_tasks:
             background_tasks.add_task(self.reindex_faq, saved.id)
         else:
             self.reindex_faq(saved.id)
         return saved
 
-    def update_faq(self, faq_id: str, payload: FaqUpdate, background_tasks: BackgroundTasks | None = None) -> FaqRecord | None:
+    def update_faq(
+        self,
+        faq_id: str,
+        payload: FaqUpdate,
+        background_tasks: BackgroundTasks | None = None,
+    ) -> FaqRecord | None:
         faq = self.repository.get_faq(faq_id)
         if not faq:
             return None
         updated = FaqRecord(**merge_update(faq, payload))
         saved = self.repository.upsert_faq(updated)
-        
         if background_tasks:
             background_tasks.add_task(self.reindex_faq, saved.id)
         else:

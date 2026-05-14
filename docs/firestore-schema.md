@@ -1,6 +1,6 @@
 # Firestore Schema
 
-Use one Firestore database for the platform. Scope records by `site_id`, `group_ids`, and later `tenant_id`.
+Use one Firestore database for the platform. Scope records by `site_id`, `group_id`, and later `tenant_id`.
 
 ## `sites/{siteId}`
 
@@ -32,7 +32,9 @@ Use one Firestore database for the platform. Scope records by `site_id`, `group_
   "name": "GoRide Common",
   "description": "Shared FAQs for all GoRide city sites",
   "site_ids": ["goride-chennai", "goride-coimbatore"],
-  "active": true
+  "active": true,
+  "created_at": "...",
+  "updated_at": "..."
 }
 ```
 
@@ -49,13 +51,16 @@ This is the editable FAQ source of truth.
   "question": "What is GoRide?",
   "answer": "GoRide is ...",
   "aliases": ["Tell me about GoRide", "wht is goride"],
-  "site_ids": [],
-  "group_ids": ["goride-common"],
-  "owner_type": "common",
+  "site_id": "",
+  "group_id": "goride-common",
   "tags": ["general"],
-  "active": true
+  "active": true,
+  "created_at": "...",
+  "updated_at": "..."
 }
 ```
+
+Each FAQ must target exactly one thing: either one `site_id` or one `group_id`, never both. Group FAQs are expanded into per-site vector records for every site in the group.
 
 ## `faq_vectors/{vectorId}`
 
@@ -127,23 +132,14 @@ matches do not download every FAQ vector for the site.
 
 Admin uses this collection to find questions where FAQ answer was not used and convert them into new FAQs.
 
-## RBAC Model
+## Access Model
 
 Panel access is enforced from Firebase Auth custom claims. Recommended claims:
 
 ```json
 {
-  "role": "editor",
-  "tenant_id": "default",
   "site_ids": ["goride-chennai", "goride-coimbatore"]
 }
 ```
 
-Roles:
-
-- `viewer`: read assigned sites, FAQs, logs, and analytics.
-- `editor`: viewer permissions plus FAQ edits, log conversion, imports, and reindexing.
-- `admin`: editor permissions plus site settings for assigned sites.
-- `super_admin`: full platform access, including creating/deleting sites and groups.
-
-Use `site_ids: ["*"]` only for platform admins. Keep role checks in the API; UI filtering is only a convenience.
+Normal users are owners of their assigned sites and groups. Use `site_ids: ["*"]` only for platform admins. Keep claim checks in the API; UI filtering is only a convenience.

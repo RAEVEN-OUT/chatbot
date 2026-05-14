@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-<<<<<<< HEAD
-=======
 from datetime import datetime, timedelta, timezone
 
->>>>>>> dev
-from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from firebase_admin import auth
 
 from app.api.deps import get_faq_service, get_repo
-from app.core.security import (
-    AdminPrincipal,
-    require_admin,
-    require_site_access,
-)
+from app.core.security import AdminPrincipal, require_admin, require_site_access
 from app.repositories.base import Repository
 from app.schemas.models import (
     AdminUserCreate,
@@ -21,33 +15,24 @@ from app.schemas.models import (
     FaqUpdate,
     ResponseType,
     SiteCreate,
-    SiteRecord,
-    SiteUpdate,
-<<<<<<< HEAD
-=======
-    SiteOwnerRegistration,
->>>>>>> dev
     SiteGroupCreate,
     SiteGroupRecord,
     SiteGroupUpdate,
+    SiteOwnerRegistration,
+    SiteRecord,
+    SiteUpdate,
 )
 from app.services.faq_service import FaqService
-from firebase_admin import auth
 
 router = APIRouter(prefix="/api")
 
 
-def _visible_sites(
-    principal: AdminPrincipal,
-    sites: list[SiteRecord],
-) -> list[SiteRecord]:
+def _visible_sites(principal: AdminPrincipal, sites: list[SiteRecord]) -> list[SiteRecord]:
     if principal.can_access_all_sites:
         return sites
     return [site for site in sites if principal.can_access_site(site.id)]
 
 
-<<<<<<< HEAD
-=======
 def _claim_site_ids(uid: str) -> list[str]:
     user = auth.get_user(uid)
     claims = user.custom_claims or {}
@@ -69,7 +54,11 @@ def _append_site_claim(uid: str, site_id: str) -> None:
     auth.set_custom_user_claims(uid, claims)
 
 
->>>>>>> dev
+def _require_group_access(group: SiteGroupRecord, principal: AdminPrincipal) -> None:
+    for site_id in group.site_ids:
+        require_site_access(principal, site_id)
+
+
 @router.get("/me")
 def current_admin(principal: AdminPrincipal = Depends(require_admin)):
     return {
@@ -93,8 +82,6 @@ def list_sites(
     )
 
 
-<<<<<<< HEAD
-=======
 @router.post("/sites", response_model=SiteRecord)
 def create_site(
     payload: SiteCreate,
@@ -107,7 +94,6 @@ def create_site(
     return site
 
 
->>>>>>> dev
 @router.get("/sites/{site_id}", response_model=SiteRecord)
 def get_site(
     site_id: str,
@@ -133,8 +119,6 @@ def update_site(
     if not site:
         raise HTTPException(status_code=404, detail="Site not found.")
     return site
-<<<<<<< HEAD
-=======
 
 
 @router.delete("/sites/{site_id}", response_model=SiteRecord)
@@ -148,7 +132,6 @@ def delete_site(
     if not site:
         raise HTTPException(status_code=404, detail="Site not found.")
     return site
->>>>>>> dev
 
 
 @router.get("/groups", response_model=list[SiteGroupRecord])
@@ -159,16 +142,7 @@ def list_groups(
     groups = repository.list_groups()
     if principal.can_access_all_sites:
         return groups
-<<<<<<< HEAD
-    
-    # Filter groups: user can see a group if it contains ANY site they own
-    return [
-        g for g in groups
-        if any(principal.can_access_site(s_id) for s_id in g.site_ids)
-    ]
-=======
-    return [g for g in groups if any(principal.can_access_site(s_id) for s_id in g.site_ids)]
->>>>>>> dev
+    return [group for group in groups if any(principal.can_access_site(site_id) for site_id in group.site_ids)]
 
 
 @router.post("/groups", response_model=SiteGroupRecord)
@@ -178,20 +152,10 @@ def create_group(
     faq_service: FaqService = Depends(get_faq_service),
     principal: AdminPrincipal = Depends(require_admin),
 ):
-<<<<<<< HEAD
-    # Ensure user has access to all sites they are putting in this group
     if not payload.site_ids:
         raise HTTPException(status_code=400, detail="A group must contain at least one site.")
-        
-    for s_id in payload.site_ids:
-        require_site_access(principal, s_id)
-        
-=======
-    if not payload.site_ids:
-        raise HTTPException(status_code=400, detail="A group must contain at least one site.")
-    for s_id in payload.site_ids:
-        require_site_access(principal, s_id)
->>>>>>> dev
+    for site_id in payload.site_ids:
+        require_site_access(principal, site_id)
     return faq_service.create_group(payload, background_tasks)
 
 
@@ -207,25 +171,14 @@ def update_group(
     group = repository.get_group(group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found.")
-<<<<<<< HEAD
-        
-    # Check access to existing sites in group
-    for s_id in group.site_ids:
-        require_site_access(principal, s_id)
-        
-    # Check access to new sites being added
+    _require_group_access(group, principal)
     if payload.site_ids:
-        for s_id in payload.site_ids:
-            require_site_access(principal, s_id)
-            
-=======
-    for s_id in group.site_ids:
-        require_site_access(principal, s_id)
-    if payload.site_ids:
-        for s_id in payload.site_ids:
-            require_site_access(principal, s_id)
->>>>>>> dev
-    return faq_service.update_group(group_id, payload, background_tasks)
+        for site_id in payload.site_ids:
+            require_site_access(principal, site_id)
+    updated = faq_service.update_group(group_id, payload, background_tasks)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Group not found.")
+    return updated
 
 
 @router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -237,15 +190,7 @@ def delete_group(
     group = repository.get_group(group_id)
     if not group:
         raise HTTPException(status_code=404, detail="Group not found.")
-<<<<<<< HEAD
-        
-    for s_id in group.site_ids:
-        require_site_access(principal, s_id)
-        
-=======
-    for s_id in group.site_ids:
-        require_site_access(principal, s_id)
->>>>>>> dev
+    _require_group_access(group, principal)
     repository.delete_group(group_id)
 
 
@@ -256,27 +201,12 @@ def create_admin_user(
 ):
     if not principal.can_access_all_sites:
         raise HTTPException(status_code=403, detail="Only platform admins can create users.")
-<<<<<<< HEAD
-        
-    try:
-        user = auth.create_user(
-            email=payload.email,
-            password=payload.password,
-        )
-        auth.set_custom_user_claims(
-            user.uid,
-            {
-                "site_ids": payload.site_ids,
-            }
-        )
-=======
     try:
         user = auth.create_user(email=payload.email, password=payload.password)
         auth.set_custom_user_claims(user.uid, {"site_ids": payload.site_ids})
->>>>>>> dev
         return {"uid": user.uid, "message": f"Successfully created user {payload.email}"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/faqs", response_model=list[FaqRecord])
@@ -290,38 +220,25 @@ def list_faqs(
     if site_id:
         require_site_access(principal, site_id)
         return repository.list_faqs(site_id=site_id, include_inactive=include_inactive)
-<<<<<<< HEAD
-
-=======
->>>>>>> dev
     if group_id:
         group = repository.get_group(group_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
-        for s_id in group.site_ids:
-            require_site_access(principal, s_id)
+        _require_group_access(group, principal)
         return repository.list_faqs(group_id=group_id, include_inactive=include_inactive)
-<<<<<<< HEAD
 
-    # If no scope, list all FAQs the user has access to
-=======
-    
->>>>>>> dev
     faqs = repository.list_faqs(include_inactive=include_inactive)
     if principal.can_access_all_sites:
         return faqs
-        
     return [
-        faq for faq in faqs
-<<<<<<< HEAD
-        if any(principal.can_access_site(s_id) for s_id in faq.site_ids) or
-           any(any(principal.can_access_site(s_id) for s_id in repository.get_group(g_id).site_ids) 
-               for g_id in faq.group_ids if repository.get_group(g_id))
-=======
-        if (faq.site_id and principal.can_access_site(faq.site_id)) or
-           (faq.group_id and (group := repository.get_group(faq.group_id)) and
-            any(principal.can_access_site(s_id) for s_id in group.site_ids))
->>>>>>> dev
+        faq
+        for faq in faqs
+        if (faq.site_id and principal.can_access_site(faq.site_id))
+        or (
+            faq.group_id
+            and (group := repository.get_group(faq.group_id))
+            and any(principal.can_access_site(site_id) for site_id in group.site_ids)
+        )
     ]
 
 
@@ -332,21 +249,6 @@ def create_faq(
     repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
 ):
-<<<<<<< HEAD
-    if not payload.site_ids and not payload.group_ids:
-        raise HTTPException(status_code=400, detail="Select at least one site or group for this FAQ.")
-        
-    for site_id in payload.site_ids:
-        require_site_access(principal, site_id)
-    
-    for group_id in payload.group_ids:
-        group = repository.get_group(group_id)
-        if not group:
-            raise HTTPException(status_code=404, detail=f"Group {group_id} not found.")
-        for s_id in group.site_ids:
-            require_site_access(principal, s_id)
-        
-=======
     if bool(payload.site_id) == bool(payload.group_id):
         raise HTTPException(status_code=400, detail="Select exactly one site or one group.")
     if payload.site_id:
@@ -355,9 +257,7 @@ def create_faq(
         group = repository.get_group(payload.group_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
-        for s_id in group.site_ids:
-            require_site_access(principal, s_id)
->>>>>>> dev
+        _require_group_access(group, principal)
     return faq_service.create_faq(payload)
 
 
@@ -372,40 +272,11 @@ def update_faq(
     existing = repository.get_faq(faq_id)
     if not existing:
         raise HTTPException(status_code=404, detail="FAQ not found.")
-<<<<<<< HEAD
-        
-    # Check access to current sites/groups
-    for s_id in existing.site_ids:
-        require_site_access(principal, s_id)
-    for g_id in existing.group_ids:
-        group = repository.get_group(g_id)
-        if group:
-            for s_id in group.site_ids:
-                require_site_access(principal, s_id)
-        
-    # Check access to new sites/groups
-    if payload.site_ids:
-        for site_id in payload.site_ids:
-            require_site_access(principal, site_id)
-    if payload.group_ids:
-        for g_id in payload.group_ids:
-            group = repository.get_group(g_id)
-            if group:
-                for s_id in group.site_ids:
-                    require_site_access(principal, s_id)
-            
-    faq = faq_service.update_faq(faq_id, payload)
-    if not faq:
-        raise HTTPException(status_code=404, detail="FAQ not found.")
-    return faq
-=======
     if existing.site_id:
         require_site_access(principal, existing.site_id)
-    if existing.group_id:
-        group = repository.get_group(existing.group_id)
-        if group:
-            for s_id in group.site_ids:
-                require_site_access(principal, s_id)
+    if existing.group_id and (group := repository.get_group(existing.group_id)):
+        _require_group_access(group, principal)
+
     target_site_id = payload.site_id if payload.site_id is not None else existing.site_id
     target_group_id = payload.group_id if payload.group_id is not None else existing.group_id
     if bool(target_site_id) == bool(target_group_id):
@@ -416,10 +287,12 @@ def update_faq(
         group = repository.get_group(target_group_id)
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
-        for s_id in group.site_ids:
-            require_site_access(principal, s_id)
-    return faq_service.update_faq(faq_id, payload)
->>>>>>> dev
+        _require_group_access(group, principal)
+
+    updated = faq_service.update_faq(faq_id, payload)
+    if not updated:
+        raise HTTPException(status_code=404, detail="FAQ not found.")
+    return updated
 
 
 @router.delete("/faqs/{faq_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -432,20 +305,10 @@ def delete_faq(
     faq = repository.get_faq(faq_id)
     if not faq:
         raise HTTPException(status_code=404, detail="FAQ not found.")
-<<<<<<< HEAD
-        
-    for s_id in faq.site_ids:
-        require_site_access(principal, s_id)
-        
-=======
     if faq.site_id:
         require_site_access(principal, faq.site_id)
-    if faq.group_id:
-        group = repository.get_group(faq.group_id)
-        if group:
-            for s_id in group.site_ids:
-                require_site_access(principal, s_id)
->>>>>>> dev
+    if faq.group_id and (group := repository.get_group(faq.group_id)):
+        _require_group_access(group, principal)
     faq_service.delete_faq(faq_id)
 
 
@@ -461,59 +324,41 @@ def get_site_analytics(
     faq_hits = sum(1 for log in logs if log.response_type == ResponseType.faq_hit)
     llm_fallbacks = sum(1 for log in logs if log.response_type == ResponseType.llm_fallback)
     helpline_escapes = sum(1 for log in logs if log.response_type == ResponseType.helpline)
-    
-    hit_rate = round((faq_hits / total * 100), 1) if total > 0 else 0
-<<<<<<< HEAD
-=======
-    llm_rate = round((llm_fallbacks / total * 100), 1) if total > 0 else 0
-    helpline_rate = round((helpline_escapes / total * 100), 1) if total > 0 else 0
->>>>>>> dev
-    
+    hit_rate = round((faq_hits / total * 100), 1) if total else 0
+    llm_rate = round((llm_fallbacks / total * 100), 1) if total else 0
+    helpline_rate = round((helpline_escapes / total * 100), 1) if total else 0
+
     from collections import Counter
+
     faq_counter = Counter(log.matched_faq_id for log in logs if log.matched_faq_id)
     top_faqs = []
     for faq_id, count in faq_counter.most_common(5):
         faq = repository.get_faq(faq_id)
         top_faqs.append({"question": faq.question if faq else faq_id, "count": count})
-        
+
     return {
         "total_queries": total,
         "faq_hits": faq_hits,
         "hit_rate": hit_rate,
-<<<<<<< HEAD
-=======
         "llm_fallbacks": llm_fallbacks,
         "llm_rate": llm_rate,
         "helpline_rate": helpline_rate,
->>>>>>> dev
-        "top_faqs": top_faqs
+        "top_faqs": top_faqs,
     }
 
 
 @router.get("/logs")
 def list_logs(
     site_id: str | None = None,
-<<<<<<< HEAD
-=======
     response_type: ResponseType | None = None,
     since: str | None = None,
     fallback_only: bool = False,
->>>>>>> dev
     limit: int = Query(default=100, ge=1, le=500),
     repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
 ):
     if site_id:
         require_site_access(principal, site_id)
-<<<<<<< HEAD
-    
-    logs = repository.list_logs(site_id=site_id, limit=limit)
-    
-    if not site_id and not principal.can_access_all_sites:
-        logs = [log for log in logs if principal.can_access_site(log.site_id)]
-        
-    return logs
-=======
     logs = repository.list_logs(
         site_id=site_id,
         response_type=response_type,
@@ -582,4 +427,3 @@ def register_site_owner(
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
->>>>>>> dev

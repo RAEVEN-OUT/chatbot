@@ -14,13 +14,36 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 
 if load_dotenv:
     load_dotenv(ROOT_DIR / ".env")
+    load_dotenv(Path.cwd() / ".env", override=False)
+
+
+def resolve_project_path(path_value: str | os.PathLike[str]) -> Path:
+    path = Path(str(path_value).strip().strip('"').strip("'"))
+    if path.is_absolute():
+        return path
+
+    candidates = [
+        ROOT_DIR / path,
+        Path.cwd() / path,
+        Path.cwd().parent / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return ROOT_DIR / path
 
 credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 if credentials_path:
     credentials_path = credentials_path.strip().strip('"').strip("'")
-    if credentials_path and not Path(credentials_path).is_absolute():
-        absolute_credentials_path = ROOT_DIR / credentials_path
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(absolute_credentials_path)
+    if credentials_path:
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(resolve_project_path(credentials_path))
+
+
+def firebase_credentials_path() -> Path:
+    configured = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if configured:
+        return resolve_project_path(configured)
+    return resolve_project_path("firebase-key.json")
 
 
 def _get_bool(name: str, default: bool = False) -> bool:

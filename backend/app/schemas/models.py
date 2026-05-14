@@ -18,8 +18,6 @@ class ResponseType(str, Enum):
     error = "error"
 
 
-<<<<<<< HEAD
-=======
 class ReviewStatus(str, Enum):
     pending = "pending"
     approved = "approved"
@@ -45,7 +43,6 @@ class BackgroundTaskRecord(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
->>>>>>> dev
 class SiteBase(BaseModel):
     name: str
     domain: str = ""
@@ -122,13 +119,8 @@ class FaqBase(BaseModel):
     question: str
     answer: str
     aliases: list[str] = Field(default_factory=list)
-<<<<<<< HEAD
-    site_ids: list[str] = Field(default_factory=list)
-    group_ids: list[str] = Field(default_factory=list)
-=======
     site_id: str = ""
     group_id: str = ""
->>>>>>> dev
     active: bool = True
 
 
@@ -140,13 +132,8 @@ class FaqUpdate(BaseModel):
     question: str | None = None
     answer: str | None = None
     aliases: list[str] | None = None
-<<<<<<< HEAD
-    site_ids: list[str] | None = None
-    group_ids: list[str] | None = None
-=======
     site_id: str | None = None
     group_id: str | None = None
->>>>>>> dev
     active: bool | None = None
 
 
@@ -216,6 +203,8 @@ class ChatLogRecord(BaseModel):
     vector_distance: float | None = None
     llm_model: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
+    review_status: ReviewStatus = ReviewStatus.pending
+    converted_to_faq_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -229,4 +218,3 @@ class SiteOwnerRegistration(BaseModel):
     email: str
     password: str
     site: SiteCreate
-
