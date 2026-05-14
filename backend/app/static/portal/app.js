@@ -449,6 +449,101 @@ window.deleteGroup = async (id) => {
     }
 };
 =======
+<<<<<<< HEAD
+=======
+const state = { sites: [], groups: [], faqs: [], logs: [], currentSiteId: "", currentGroupId: "", sessionId: "", principal: null };
+const $ = (id) => document.getElementById(id);
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC1QxlKBkLpT2htParIuodhPNX6qtTGnlU",
+  authDomain: "chatbot-faq-76909.firebaseapp.com",
+  projectId: "chatbot-faq-76909",
+};
+
+let portalApp;
+try { portalApp = firebase.initializeApp(firebaseConfig, "PortalApp"); } catch { portalApp = firebase.app("PortalApp"); }
+const auth = firebase.auth(portalApp);
+
+(async () => {
+  await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      try {
+        localStorage.setItem("portal_session", await user.getIdToken());
+        $("userEmail").textContent = user.email;
+        $("logoutBtn").style.display = "inline-block";
+        hideLogin();
+        await bootstrapPortal();
+      } catch (error) {
+        console.error(error);
+        auth.signOut();
+      }
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const handoff = params.get("handoff");
+    if (handoff) {
+      window.history.replaceState({}, document.title, window.location.pathname + (params.get("site_id") ? `?site_id=${params.get("site_id")}` : ""));
+      await auth.signInWithCustomToken(handoff);
+      return;
+    }
+
+    localStorage.removeItem("portal_session");
+    $("userEmail").textContent = "";
+    $("logoutBtn").style.display = "none";
+    showLogin();
+  });
+})();
+
+async function authHeaders(extra = {}) {
+  const headers = { ...extra };
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : localStorage.getItem("portal_session");
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  return headers;
+}
+
+async function api(path, options = {}) {
+  const headers = await authHeaders(options.headers || {});
+  if (options.body instanceof FormData) delete headers["Content-Type"];
+  setLoading(true);
+  try {
+    const res = await fetch(path.startsWith("/") ? path : `/${path}`, { ...options, headers });
+    if (res.status === 401) {
+      localStorage.removeItem("portal_session");
+      throw new Error("Session expired. Please refresh and try again.");
+    }
+    if (!res.ok) throw new Error(await res.text() || `Request failed: ${res.status}`);
+    if (res.status === 204) return null;
+    return res.json();
+  } finally {
+    setLoading(false);
+  }
+}
+
+function showLogin() { $("loginOverlay").classList.add("active"); $("mainLayout").style.display = "none"; }
+function hideLogin() { $("loginOverlay").classList.remove("active"); $("mainLayout").style.display = "grid"; }
+function setStatus(text) { $("statusText").textContent = text; }
+function setLoading(on) { $("globalLoading").style.display = on ? "inline-block" : "none"; }
+function esc(v = "") { return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+function formatDate(value) { return value ? new Date(value).toLocaleString() : "n/a"; }
+function recentStamp(record) {
+  const created = record.created_at ? new Date(record.created_at).getTime() : 0;
+  const updated = record.updated_at ? new Date(record.updated_at).getTime() : 0;
+  return updated && updated > created + 1000 ? `Updated ${formatDate(record.updated_at)}` : `Created ${formatDate(record.created_at)}`;
+}
+function siteDisplay(site) { return site ? `${site.name} (${site.id})` : ""; }
+function groupDisplay(group) { return group ? `${group.name} (${group.id})` : ""; }
+function idFromChooser(value, items) {
+  const trimmed = value.trim();
+  const paren = trimmed.match(/\(([^()]+)\)$/);
+  const candidate = paren ? paren[1] : trimmed;
+  return items.find((item) => item.id === candidate || item.name === trimmed)?.id || candidate;
+}
+function currentSite() { return state.sites.find((site) => site.id === state.currentSiteId); }
+
+>>>>>>> 9e162b1fae78ae3979f86e3c770b837b9c0be1ff
 async function bootstrapPortal() {
   setStatus("Loading...");
   const [me, sites, groups] = await Promise.all([api("/api/me"), api("/api/sites"), api("/api/groups")]);
