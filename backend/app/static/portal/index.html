@@ -222,19 +222,21 @@
 
           <!-- FAQs Panel -->
           <div id="faqs" class="panel">
-            <div class="toolbar">
-              <div class="search-box">
+            <div class="toolbar-primary">
+              <div class="search-field">
                 <i data-lucide="search"></i>
-                <input id="faqSearch" placeholder="Search FAQs..." />
+                <input id="faqSearch" placeholder="Search knowledge base..." />
               </div>
-              <div class="filter-box">
+              <div class="filter-box" style="flex: 0 0 200px;">
                 <i data-lucide="filter"></i>
                 <input id="faqGroupChooser" list="groupOptions" placeholder="Filter by group" />
               </div>
-              <button id="createFaqBtn" class="primary-btn">
-                <i data-lucide="plus"></i>
-                <span>Add FAQ</span>
-              </button>
+              <div class="header-actions">
+                <button id="createFaqBtn" class="primary-btn">
+                  <i data-lucide="plus"></i>
+                  <span>Add New Entry</span>
+                </button>
+              </div>
             </div>
             <div id="faqsList" class="faq-list"></div>
           </div>

@@ -162,16 +162,43 @@ async function refreshFaqs() {
 function renderFaqs() {
   const query = $("faqSearch").value.trim().toLowerCase();
   const faqs = state.faqs.filter((faq) => !query || [faq.question, faq.answer, faq.id, ...(faq.aliases || [])].some((value) => String(value || "").toLowerCase().includes(query)));
-  $("faqsList").innerHTML = faqs.length ? faqs.map((faq) => `
-    <article class="faq-item">
-      <h3>${esc(faq.question)}</h3>
-      <div class="faq-answer">${esc(faq.answer)}</div>
-      <p class="muted" style="font-size: 11px;">${recentStamp(faq)} | Aliases: ${esc((faq.aliases || []).join(", ") || "none")}</p>
-      <div class="actions">
-        <button class="secondary-btn btn-sm" onclick="editFaq('${esc(faq.id)}')">Edit</button>
-        <button class="secondary-btn btn-sm" style="color: var(--error);" onclick="deleteFaq('${esc(faq.id)}')">Delete</button>
+  
+  if (!faqs.length) {
+    $("faqsList").innerHTML = `<div class="empty-state"><i data-lucide="help-circle"></i><p>No knowledge base entries found.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  $("faqsList").innerHTML = faqs.map((faq) => `
+    <div class="faq-row animate-up">
+      <div class="faq-content">
+        <div class="faq-header">
+          <h3 class="faq-question">${esc(faq.question)}</h3>
+          <div class="faq-meta">
+            <span class="meta-item"><i data-lucide="clock"></i> ${recentStamp(faq)}</span>
+            ${faq.group_id ? `<span class="meta-item"><i data-lucide="layers"></i> Group: ${esc(state.groups.find(g => g.id === faq.group_id)?.name || 'Unknown')}</span>` : ''}
+          </div>
+        </div>
+        <div class="faq-body">
+          <p class="faq-answer">${esc(faq.answer)}</p>
+          ${faq.aliases?.length ? `
+            <div class="faq-tags">
+              ${faq.aliases.map(a => `<span class="alias-tag">${esc(a)}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
       </div>
-    </article>`).join("") : `<p class="muted">No FAQs yet.</p>`;
+      <div class="faq-actions">
+        <button class="action-btn" onclick="editFaq('${esc(faq.id)}')" title="Edit entry">
+          <i data-lucide="edit-3"></i>
+        </button>
+        <button class="action-btn delete" onclick="deleteFaq('${esc(faq.id)}')" title="Delete entry">
+          <i data-lucide="trash-2"></i>
+        </button>
+      </div>
+    </div>`).join("");
+    
+  lucide.createIcons();
 }
 
 async function refreshLogs() {
