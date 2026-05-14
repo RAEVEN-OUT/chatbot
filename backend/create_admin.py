@@ -30,7 +30,41 @@ def create_admin(email, password):
         print(f"Successfully created admin user: {email}")
         print(f"UID: {user.uid}")
     except Exception as e:
+        if "EMAIL_EXISTS" in str(e) or "already exists" in str(e).lower():
+            try:
+                user = auth.get_user_by_email(email)
+                auth.update_user(user.uid, password=password, display_name=user.display_name or "Admin")
+                auth.set_custom_user_claims(user.uid, {"site_ids": ["*"]})
+                print(f"User already existed; updated password and promoted to super-admin: {email}")
+                print(f"UID: {user.uid}")
+                print("Sign out and sign back in so Firebase issues a token with the new claims.")
+                return
+            except Exception as promote_error:
+                print(f"Error promoting existing user: {promote_error}")
+                return
         print(f"Error creating user: {e}")
+
+def promote_admin(email):
+    try:
+        user = auth.get_user_by_email(email)
+        claims = dict(user.custom_claims or {})
+        claims["site_ids"] = ["*"]
+        auth.set_custom_user_claims(user.uid, claims)
+        print(f"Successfully promoted user to super-admin: {email}")
+        print(f"UID: {user.uid}")
+        print("Sign out and sign back in so Firebase issues a token with the new claims.")
+    except Exception as e:
+        print(f"Error promoting user: {e}")
+
+def show_user(email):
+    try:
+        user = auth.get_user_by_email(email)
+        print(f"Email: {user.email}")
+        print(f"UID: {user.uid}")
+        print(f"Disabled: {user.disabled}")
+        print(f"Custom claims: {user.custom_claims or {}}")
+    except Exception as e:
+        print(f"Error loading user: {e}")
 
 def delete_admin(email):
     try:
@@ -66,6 +100,12 @@ def main():
     passwd_parser.add_argument("email", help="Admin email")
     passwd_parser.add_argument("password", help="New password")
 
+    promote_parser = subparsers.add_parser("promote", help="Promote an existing user to super-admin")
+    promote_parser.add_argument("email", help="Admin email")
+
+    show_parser = subparsers.add_parser("show", help="Show a user's Firebase custom claims")
+    show_parser.add_argument("email", help="Admin email")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -80,6 +120,10 @@ def main():
         delete_admin(args.email)
     elif args.command == "passwd":
         change_password(args.email, args.password)
+    elif args.command == "promote":
+        promote_admin(args.email)
+    elif args.command == "show":
+        show_user(args.email)
 
 if __name__ == "__main__":
     main()
@@ -91,6 +135,12 @@ python backend/create_admin.py create admin@example.com yourpassword
 
 # Update an admin's password
 python backend/create_admin.py passwd admin@example.com newpassword
+
+# Promote an existing Firebase user to super-admin
+python backend/create_admin.py promote admin@example.com
+
+# Check a user's custom claims
+python backend/create_admin.py show admin@example.com
 
 # Delete an admin account
 python backend/create_admin.py delete admin@example.com

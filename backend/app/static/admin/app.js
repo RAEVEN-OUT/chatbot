@@ -124,15 +124,28 @@ async function api(path, options = {}) {
   setGlobalLoading(true);
   try {
     const response = await fetch(path.startsWith("/") ? path : `/${path}`, { ...options, headers });
+    const bodyText = response.status === 204 ? "" : await response.text();
     if (response.status === 401) {
       localStorage.removeItem("admin_session");
-      throw new Error("Session expired. Please refresh and try again.");
+      const detail = parseApiError(bodyText);
+      throw new Error(detail ? `Session rejected: ${detail}` : "Session rejected. Sign out, sign in again, and check Firebase admin claims.");
     }
-    if (!response.ok) throw new Error(await response.text() || `Request failed: ${response.status}`);
+    if (!response.ok) throw new Error(parseApiError(bodyText) || `Request failed: ${response.status}`);
     if (response.status === 204) return null;
-    return response.json();
+    return bodyText ? JSON.parse(bodyText) : null;
   } finally {
     setGlobalLoading(false);
+  }
+}
+
+function parseApiError(bodyText = "") {
+  if (!bodyText) return "";
+  try {
+    const data = JSON.parse(bodyText);
+    if (typeof data.detail === "string") return data.detail;
+    return JSON.stringify(data.detail || data);
+  } catch {
+    return bodyText;
   }
 }
 

@@ -57,15 +57,28 @@ async function api(path, options = {}) {
   setLoading(true);
   try {
     const res = await fetch(path.startsWith("/") ? path : `/${path}`, { ...options, headers });
+    const bodyText = res.status === 204 ? "" : await res.text();
     if (res.status === 401) {
       localStorage.removeItem("portal_session");
-      throw new Error("Session expired. Please refresh and try again.");
+      const detail = parseApiError(bodyText);
+      throw new Error(detail ? `Session rejected: ${detail}` : "Session rejected. Sign out, sign in again, and check Firebase site claims.");
     }
-    if (!res.ok) throw new Error(await res.text() || `Request failed: ${res.status}`);
+    if (!res.ok) throw new Error(parseApiError(bodyText) || `Request failed: ${res.status}`);
     if (res.status === 204) return null;
-    return res.json();
+    return bodyText ? JSON.parse(bodyText) : null;
   } finally {
     setLoading(false);
+  }
+}
+
+function parseApiError(bodyText = "") {
+  if (!bodyText) return "";
+  try {
+    const data = JSON.parse(bodyText);
+    if (typeof data.detail === "string") return data.detail;
+    return JSON.stringify(data.detail || data);
+  } catch {
+    return bodyText;
   }
 }
 

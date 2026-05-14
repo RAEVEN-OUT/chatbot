@@ -86,7 +86,7 @@ async def require_admin(
 
     try:
         # Verify the token
-        decoded_token = auth.verify_id_token(token)
+        decoded_token = auth.verify_id_token(token, clock_skew_seconds=10)
         principal = _principal_from_claims(decoded_token)
         
         if not principal.uid:
@@ -95,8 +95,10 @@ async def require_admin(
             
         return principal
     except Exception as exc:
+        import traceback
         detail = str(exc)
-        print(f"DEBUG AUTH: Verification failed: {detail}")
+        print(f"DEBUG AUTH: Verification failed for token {token[:10]}...: {detail}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid session: {detail}",
