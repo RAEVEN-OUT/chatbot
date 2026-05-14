@@ -395,20 +395,13 @@ def list_logs(
     response_type: ResponseType | None = None,
     since: str | None = None,
     fallback_only: bool = False,
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=20, ge=1, le=500),
+    offset: int = 0,
     repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
 ):
     if site_id:
         require_site_access(principal, site_id)
-    logs = repository.list_logs(
-        site_id=site_id,
-        response_type=response_type,
-        fallback_only=fallback_only,
-        limit=limit,
-    )
-    if not site_id and not principal.can_access_all_sites:
-        logs = [log for log in logs if principal.can_access_site(log.site_id)]
     if since:
         now = datetime.now(timezone.utc)
         cutoffs = {
@@ -417,9 +410,44 @@ def list_logs(
             "30d": now - timedelta(days=30),
         }
         cutoff = cutoffs.get(since)
-        if cutoff:
-            logs = [log for log in logs if log.timestamp >= cutoff]
-    return logs
+    else:
+        cutoff = None
+
+    # Pass a high limit to repository to get all filtered logs, then paginate here
+    all_logs = repository.list_logs(
+        site_id=site_id,
+        response_type=response_type,
+        fallback_only=fallback_only,
+        limit=1000,
+        offset=0,
+        since=cutoff,
+    )
+    
+    if not site_id and not principal.can_access_all_sites:
+        all_logs = [log for log in all_logs if principal.can_access_site(log.site_id)]
+        
+    total_count = len(all_logs)
+    paginated_logs = all_logs[offset:offset + limit]
+    
+    return {
+        "logs": paginated_logs,
+        "total": total_count
+    }
+
+@router.delete("/logs/purge")
+def purge_old_logs(
+    site_id: str | None = None,
+    days: int = 30,
+    repository: Repository = Depends(get_repo),
+    principal: AdminPrincipal = Depends(require_admin),
+):
+    if site_id:
+        require_site_access(principal, site_id)
+    elif not principal.can_access_all_sites:
+        raise HTTPException(status_code=403, detail="Platform admin required to purge all logs.")
+        
+    deleted_count = repository.purge_old_logs(site_id=site_id, days=days)
+    return {"message": f"Successfully deleted {deleted_count} logs older than {days} days."}
 
 
 @router.post("/logs/{log_id}/convert-to-faq", response_model=FaqRecord)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from datetime import datetime
 
 from app.schemas.models import (
     ChatLogRecord,
@@ -96,11 +97,16 @@ class Repository(Protocol):
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
         fallback_only: bool = False,
+        since: datetime | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[ChatLogRecord]:
         ...
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
+        ...
+
+    def purge_old_logs(self, site_id: str | None = None, days: int = 30) -> int:
         ...
 
     def get_background_task(self, task_id: str) -> BackgroundTaskRecord | None:

@@ -3,6 +3,11 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+try:
+    from google.cloud.firestore_v1 import FieldFilter
+except ImportError:  # pragma: no cover
+    FieldFilter = None  # type: ignore[assignment,misc]
+
 from app.core.config import firebase_credentials_info, firebase_credentials_path, settings
 from app.repositories.base import Repository
 from app.repositories.cache import TTLCache
@@ -177,18 +182,18 @@ class FirestoreRepository(Repository):
     ) -> list[FaqRecord]:
         if site_id:
             faq_by_id: dict[str, FaqRecord] = {}
-            site_query = self._collection("faq_sources").where("site_id", "==", site_id)
+            site_query = self._collection("faq_sources").where(filter=FieldFilter("site_id", "==", site_id))
             if not include_inactive:
-                site_query = site_query.where("active", "==", True)
+                site_query = site_query.where(filter=FieldFilter("active", "==", True))
             for doc in site_query.stream():
                 faq = self._faq_from_snapshot(doc)
                 faq_by_id[faq.id] = faq
 
             target_group_ids = [group.id for group in self.list_groups() if site_id in group.site_ids]
             for target_group_id in target_group_ids:
-                query = self._collection("faq_sources").where("group_id", "==", target_group_id)
+                query = self._collection("faq_sources").where(filter=FieldFilter("group_id", "==", target_group_id))
                 if not include_inactive:
-                    query = query.where("active", "==", True)
+                    query = query.where(filter=FieldFilter("active", "==", True))
                 for doc in query.stream():
                     faq = self._faq_from_snapshot(doc)
                     faq_by_id[faq.id] = faq
@@ -200,9 +205,9 @@ class FirestoreRepository(Repository):
 
         query = self._collection("faq_sources")
         if group_id:
-            query = query.where("group_id", "==", group_id)
+            query = query.where(filter=FieldFilter("group_id", "==", group_id))
         if not include_inactive:
-            query = query.where("active", "==", True)
+            query = query.where(filter=FieldFilter("active", "==", True))
         docs = [self._faq_from_snapshot(doc) for doc in query.stream()]
         return sorted(docs, key=lambda faq: faq.updated_at, reverse=True)
 
@@ -222,7 +227,7 @@ class FirestoreRepository(Repository):
     def replace_vectors_for_faq(self, faq_id: str, vectors: list[FaqVectorRecord]) -> None:
         batch = self.db.batch()
         op_count = 0
-        old_docs = self._collection("faq_vectors").where("faq_id", "==", faq_id).stream()
+        old_docs = self._collection("faq_vectors").where(filter=FieldFilter("faq_id", "==", faq_id)).stream()
         old_site_ids: set[str] = set()
 
         def commit_if_full(force: bool = False) -> None:
@@ -257,8 +262,8 @@ class FirestoreRepository(Repository):
             return cached
         docs = (
             self._collection("faq_vectors")
-            .where("site_id", "==", site_id)
-            .where("active", "==", True)
+            .where(filter=FieldFilter("site_id", "==", site_id))
+            .where(filter=FieldFilter("active", "==", True))
             .stream()
         )
         vectors = [FaqVectorRecord(**self._from_firestore(doc.to_dict())) for doc in docs]
@@ -276,9 +281,9 @@ class FirestoreRepository(Repository):
             return cached if isinstance(cached, FaqVectorRecord) else None
         docs = (
             self._collection("faq_vectors")
-            .where("site_id", "==", site_id)
-            .where("active", "==", True)
-            .where("normalized_text", "==", normalized_text)
+            .where(filter=FieldFilter("site_id", "==", site_id))
+            .where(filter=FieldFilter("active", "==", True))
+            .where(filter=FieldFilter("normalized_text", "==", normalized_text))
             .limit(1)
             .stream()
         )
@@ -301,8 +306,8 @@ class FirestoreRepository(Repository):
 
             query = (
                 self._collection("faq_vectors")
-                .where("site_id", "==", site_id)
-                .where("active", "==", True)
+                .where(filter=FieldFilter("site_id", "==", site_id))
+                .where(filter=FieldFilter("active", "==", True))
                 .find_nearest(
                     vector_field="embedding",
                     query_vector=Vector(embedding),
@@ -344,26 +349,79 @@ class FirestoreRepository(Repository):
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
         fallback_only: bool = False,
+        since: datetime | None = None,
         limit: int = 200,
+        offset: int = 0,
     ) -> list[ChatLogRecord]:
-        query = self._collection("chat_logs")
+        # Lazy Auto-Purge: Trigger a purge in the background when admin lists logs
+        try:
+            import threading
+            threading.Thread(target=self.purge_old_logs, args=(site_id, 30), daemon=True).start()
+        except Exception:
+            pass
+
+        query = self._collection("chat_logs").order_by("timestamp", direction="DESCENDING")
         if site_id:
-            query = query.where("site_id", "==", site_id)
-        if response_type:
-            query = query.where("response_type", "==", response_type.value)
-        if review_status:
-            query = query.where("review_status", "==", review_status.value)
-        fetch_limit = limit * 2 if fallback_only else limit
-        query = query.limit(max(1, min(fetch_limit, 1000)))
-        logs = []
+            query = query.where(filter=FieldFilter("site_id", "==", site_id))
+        # Fetch up to 1000 logs to allow in-memory filtering without composite indexes
+        query = query.limit(1000)
+        
+        all_logs = []
         for doc in query.stream():
             data = doc.to_dict()
             data["id"] = doc.id
             log = ChatLogRecord(**self._from_firestore(data))
+            
+            # Apply filters in Python to avoid Firestore composite index errors
+            if response_type and log.response_type != response_type:
+                continue
+            if review_status and log.review_status != review_status:
+                continue
+            if since and log.timestamp < since:
+                continue
             if fallback_only and log.response_type == ResponseType.faq_hit:
                 continue
-            logs.append(log)
-        return sorted(logs, key=lambda item: item.timestamp, reverse=True)[:limit]
+                
+            all_logs.append(log)
+            
+        # Total count after filtering
+        total_count = len(all_logs)
+            
+        # Apply offset and limit manually
+        paginated_logs = all_logs[offset:offset + limit]
+        
+        # We need a way to return the total count. 
+        # Since the return type is list[ChatLogRecord], we'll pass it in a header or wrapper.
+        # But for now, we can just return the paginated logs. We'll handle total count differently.
+        return paginated_logs
+        
+
+
+    def purge_old_logs(self, site_id: str | None = None, days: int = 30) -> int:
+        from datetime import datetime, timedelta, timezone
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        query = self._collection("chat_logs").where(filter=FieldFilter("timestamp", "<", cutoff))
+        if site_id:
+            query = query.where(filter=FieldFilter("site_id", "==", site_id))
+            
+        batch = self.db.batch()
+        count = 0
+        deleted_total = 0
+        
+        for doc in query.stream():
+            batch.delete(doc.reference)
+            count += 1
+            deleted_total += 1
+            if count >= 450:
+                batch.commit()
+                batch = self.db.batch()
+                count = 0
+                
+        if count > 0:
+            batch.commit()
+            
+        return deleted_total
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
         self._save("chat_logs", log.id, log)

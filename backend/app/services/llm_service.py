@@ -5,7 +5,7 @@ from functools import lru_cache
 from typing import AsyncIterable, Protocol
 
 from app.core.config import settings
-from app.schemas.models import FaqVectorRecord
+from app.schemas.models import FaqVectorRecord, SiteRecord
 
 
 def _load_httpx():
@@ -130,7 +130,7 @@ class GeminiLlmService(LlmService):
             )
         return RuntimeError(f"Gemini {operation} request failed for model {self.model_id}: {exc}")
 
-    def _prompt(self, question: str, candidates: list[FaqVectorRecord]) -> str:
+    def _prompt(self, question: str, candidates: list[FaqVectorRecord], site: SiteRecord | None = None) -> str:
         faq_context = "\n\n".join(
             (
                 f"FAQ {index + 1}\n"
@@ -139,12 +139,17 @@ class GeminiLlmService(LlmService):
             )
             for index, candidate in enumerate(candidates[:5])
         )
+        bot_name = site.bot_name if site else "Support Bot"
+        site_name = site.name if site else "this service"
+        helpline = site.helpline_number if site else ""
+        helpline_note = f" If the user needs further help, refer them to the helpline: {helpline}." if helpline else ""
         prompt = (
-            "You are a helpful and conversational customer support agent.\n"
-            "Your job is to answer the user's question using ONLY the provided FAQ information.\n"
-            "If the question cannot be answered using the FAQs, respond with exactly: NO_ANSWER\n"
+            f"You are {bot_name}, a helpful and friendly customer support agent for {site_name}.\n"
+            "Your job is to answer the user's question using the provided FAQ information.\n"
+            "If the question is a general greeting or asks about who you are, respond naturally using your identity above.\n"
+            "If the question is about a specific topic not covered by any FAQ, respond with exactly: NO_ANSWER\n"
             "You may combine information from multiple FAQs to give a complete answer.\n"
-            "Write your response in a friendly, natural tone. Do not just blindly copy-paste.\n\n"
+            f"Write your response in a friendly, conversational tone.{helpline_note}\n\n"
             f"User question: {question}\n\n"
             f"Available FAQs to use as context:\n{faq_context}"
         )
@@ -162,12 +167,12 @@ class GeminiLlmService(LlmService):
             return None
         return text
 
-    def answer_from_faqs(self, question: str, candidates: list[FaqVectorRecord]) -> str | None:
+    def answer_from_faqs(self, question: str, candidates: list[FaqVectorRecord], site: SiteRecord | None = None) -> str | None:
         if not candidates:
             return None
 
         httpx = _load_httpx()
-        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates)}]}]}
+        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates, site)}]}]}
         try:
             with httpx.Client(timeout=30.0) as client:
                 response = client.post(
@@ -186,12 +191,13 @@ class GeminiLlmService(LlmService):
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> str | None:
         if not candidates:
             return None
 
         httpx = _load_httpx()
-        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates)}]}]}
+        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates, site)}]}]}
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
@@ -210,12 +216,13 @@ class GeminiLlmService(LlmService):
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> AsyncIterable[str]:
         if not candidates:
             return
 
         httpx = _load_httpx()
-        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates)}]}]}
+        payload = {"contents": [{"parts": [{"text": self._prompt(question, candidates, site)}]}]}
         
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -281,11 +288,14 @@ class GeminiLlmService(LlmService):
 
         prompt = (
             "You are an expert intent matching AI for a chatbot.\n"
-            "Your job is to analyze the logic, entities, and geographical constraints in the user's question, "
-            "and determine which of the provided candidate FAQs truly and precisely answers it.\n"
-            "If the user asks about a specific location (e.g. Madurai), do NOT select a FAQ about a different location (e.g. Marudhamalai), even if they sound similar.\n"
-            "Respond ONLY with the exact ID of the correct FAQ.\n"
-            "If none of the candidates perfectly answer the question based on logic, respond with exactly: NONE\n\n"
+            "Your job is to determine if exactly ONE of the candidate FAQs perfectly and completely answers the user's question.\n"
+            "Rules for selecting a FAQ:\n"
+            "1. The FAQ must answer the ENTIRE question.\n"
+            "2. If the user asks a multi-part question (e.g. asking about two things), respond with NONE.\n"
+            "3. If the user asks a plural/broad question (e.g. 'colors of fruits') and the FAQs are specific (e.g. 'color of apple'), respond with NONE.\n"
+            "4. Do not select a FAQ if it only partially answers the question.\n"
+            "If a single FAQ is a perfect match, respond ONLY with its exact ID.\n"
+            "If no single FAQ is a perfect match, or if combining FAQs is required, respond with exactly: NONE\n\n"
             f"User question: {question}\n\n"
             f"Candidate FAQs:\n{faq_context}"
         )

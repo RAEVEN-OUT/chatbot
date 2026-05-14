@@ -91,7 +91,6 @@ def get_widget_config(site_id: str, request: Request, repository: Repository = D
         "botName": site.bot_name,
         "botAvatar": site.bot_avatar_url,
         "launcherIcon": site.launcher_icon,
-        "collectLead": True,
     }
 
 

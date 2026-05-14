@@ -168,13 +168,17 @@ class RetrievalService:
         if exact_vector:
             return self._faq_hit(exact_vector, 0.0)
 
-        query_embedding = await self.embedder.embed_async(question)
-        results = await asyncio.to_thread(
-            self.repository.search_vectors,
-            site.id,
-            query_embedding,
-            settings.vector_search_limit,
-        )
+        try:
+            query_embedding = await self.embedder.embed_async(question)
+            results = await asyncio.to_thread(
+                self.repository.search_vectors,
+                site.id,
+                query_embedding,
+                settings.vector_search_limit,
+            )
+        except Exception:
+            logger.exception("Embedding failed for site %s, falling back", site.id)
+            results = []
         if not results:
             return self._helpline(site, None, None)
 
@@ -196,7 +200,7 @@ class RetrievalService:
                 )
                 return self._faq_hit(reranked_faq, reranked_distance)
 
-            llm_answer = await self.llm.answer_from_faqs_async(question, llm_candidates)
+            llm_answer = await self.llm.answer_from_faqs_async(question, llm_candidates, site=site)
             if llm_answer:
                 return RetrievalCandidate(
                     answer=llm_answer,
@@ -206,7 +210,8 @@ class RetrievalService:
                     llm_model=self.llm.model_name,
                 )
 
-        if not self.llm.model_name and best_distance <= site.faq_review_distance:
+        # LLM returned NO_ANSWER or is disabled — fall back to closest FAQ if within review distance
+        if best_distance <= site.faq_review_distance:
             return self._faq_hit(best_vector, best_distance)
 
         return self._helpline(site, best_vector.faq_id, best_distance)
@@ -278,13 +283,17 @@ class RetrievalService:
         if exact_vector:
             candidate = self._faq_hit(exact_vector, 0.0)
         else:
-            query_embedding = await self.embedder.embed_async(payload.question)
-            results = await asyncio.to_thread(
-                self.repository.search_vectors,
-                site.id,
-                query_embedding,
-                settings.vector_search_limit,
-            )
+            try:
+                query_embedding = await self.embedder.embed_async(payload.question)
+                results = await asyncio.to_thread(
+                    self.repository.search_vectors,
+                    site.id,
+                    query_embedding,
+                    settings.vector_search_limit,
+                )
+            except Exception:
+                logger.exception("Embedding failed for site %s, falling back", site.id)
+                results = []
             if results:
                 best_vector, best_distance = results[0]
                 if best_distance <= site.faq_accept_distance:
@@ -333,6 +342,7 @@ class RetrievalService:
                             yield event
                         return
                     else:
+                        # LLM disabled, no review-distance match either
                         candidate = self._helpline(site, best_vector.faq_id, best_distance)
             else:
                 candidate = self._helpline(site, None, None)
@@ -370,16 +380,22 @@ class RetrievalService:
 
         full_answer = ""
         try:
-            async for token in self.llm.stream_answer_from_faqs_async(payload.question, candidates):
+            async for token in self.llm.stream_answer_from_faqs_async(payload.question, candidates, site=site):
                 full_answer += token
                 yield {"type": "token", "text": token}
         except Exception:
             logger.exception("LLM stream fallback failed for site %s", site.id)
 
         if not full_answer:
-            helpline = self._helpline(site, best_vector.faq_id, best_distance)
-            yield {"type": "token", "text": helpline.answer}
-            self._log_candidate_background(site, session, payload, helpline)
+            # LLM said NO_ANSWER — try closest FAQ before helpline
+            if best_distance <= site.faq_review_distance:
+                faq_fallback = self._faq_hit(best_vector, best_distance)
+                yield {"type": "token", "text": faq_fallback.answer}
+                self._log_candidate_background(site, session, payload, faq_fallback)
+            else:
+                helpline = self._helpline(site, best_vector.faq_id, best_distance)
+                yield {"type": "token", "text": helpline.answer}
+                self._log_candidate_background(site, session, payload, helpline)
             yield {"type": "done"}
             return
 
