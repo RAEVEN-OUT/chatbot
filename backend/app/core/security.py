@@ -7,19 +7,19 @@ import firebase_admin
 from firebase_admin import auth
 from fastapi import Depends, Header, HTTPException, status
 
-from app.core.config import settings
+from app.core.config import ROOT_DIR, settings
 
 if not firebase_admin._apps:
-    import os
     from firebase_admin import credentials
-    key_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "firebase-key.json")
-    )
-    if os.path.exists(key_path):
-        cred = credentials.Certificate(key_path)
+    
+    key_path = ROOT_DIR / "firebase-key.json"
+    
+    if key_path.exists():
+        cred = credentials.Certificate(str(key_path))
         firebase_admin.initialize_app(cred)
     else:
         # Fallback: rely on GOOGLE_APPLICATION_CREDENTIALS env var
+        # or default service account if running in GCP
         firebase_admin.initialize_app()
 
 

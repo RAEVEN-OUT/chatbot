@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 
 from app.core.config import settings
+from app.core.config import ROOT_DIR
 from app.repositories.base import Repository
 from app.repositories.cache import TTLCache
 from app.repositories.memory import cosine_distance
@@ -31,10 +32,17 @@ class FirestoreRepository(Repository):
         except ImportError as exc:
             raise RuntimeError("Install google-cloud-firestore to use Firestore.") from exc
 
+        key_path = ROOT_DIR / "firebase-key.json"
+        client_kwargs = {"database": database}
         if project:
-            self.db = firestore.Client(project=project, database=database)
-        else:
-            self.db = firestore.Client(database=database)
+            client_kwargs["project"] = project
+        if key_path.exists():
+            from google.oauth2 import service_account
+
+            client_kwargs["credentials"] = service_account.Credentials.from_service_account_file(
+                str(key_path)
+            )
+        self.db = firestore.Client(**client_kwargs)
             
         self._site_cache: TTLCache[str, SiteRecord] = TTLCache(
             ttl_seconds=settings.repository_cache_ttl_seconds,

@@ -15,6 +15,13 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 if load_dotenv:
     load_dotenv(ROOT_DIR / ".env")
 
+credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path:
+    credentials_path = credentials_path.strip().strip('"').strip("'")
+    if credentials_path and not Path(credentials_path).is_absolute():
+        absolute_credentials_path = ROOT_DIR / credentials_path
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(absolute_credentials_path)
+
 
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
