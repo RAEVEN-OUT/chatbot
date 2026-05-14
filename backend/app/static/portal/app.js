@@ -356,9 +356,10 @@ function renderMainCharts(data) {
 
 function renderSparklines() {
   ['sparklineTotal', 'sparklineHits', 'sparklineLlm', 'sparklineHelpline'].forEach(id => {
+    if (state.charts[id]) state.charts[id].destroy();
     const ctx = $(id).getContext('2d');
     const color = id.includes('Total') ? '#7c3aed' : id.includes('Hits') ? '#10b981' : id.includes('Llm') ? '#ea580c' : '#2563eb';
-    new Chart(ctx, {
+    state.charts[id] = new Chart(ctx, {
       type: 'line',
       data: {
         labels: [1, 2, 3, 4, 5, 6, 7],
@@ -385,22 +386,46 @@ function renderGroups() {
   $("groupSiteChecks").innerHTML = state.sites.map((site) => `<label class="checkbox-label"><input name="groupSite" type="checkbox" value="${esc(site.id)}" /> <span>${esc(site.name)}</span></label>`).join("");
   const q = $("groupSearch").value.trim().toLowerCase();
   const groups = state.groups.filter((group) => !q || [group.name, group.id, group.description].some((value) => String(value || "").toLowerCase().includes(q)));
-  $("groupsList").innerHTML = groups.length ? groups.map((group) => {
-    const siteNames = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id).join(", ");
-    return `<div class="faq-item">
-      <div style="display: flex; justify-content: space-between; align-items: start;">
-        <div>
-          <h3>${esc(group.name)}</h3>
-          <p class="muted">${esc(group.description || 'No description')}</p>
+  
+  if (!groups.length) {
+    $("groupsList").innerHTML = `<div class="empty-state"><i data-lucide="layers"></i><p>No site groups found.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  $("groupsList").innerHTML = `<div class="groups-grid">` + groups.map((group) => {
+    const sites = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id);
+    return `
+      <div class="group-card animate-up">
+        <div class="group-card-header">
+          <div class="group-card-title">
+            <div class="group-icon-circle">
+              <i data-lucide="layers"></i>
+            </div>
+            <h3>${esc(group.name)}</h3>
+          </div>
+          <div class="group-actions">
+            <button onclick="editGroup('${esc(group.id)}')" class="action-btn-pill" title="Edit Group">
+              <i data-lucide="edit-3"></i>
+            </button>
+            <button onclick="deleteGroup('${esc(group.id)}')" class="action-btn-pill delete" title="Delete Group">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
         </div>
-        <div class="actions">
-          <button onclick="editGroup('${esc(group.id)}')" class="secondary-btn btn-sm">Edit</button>
-          <button onclick="deleteGroup('${esc(group.id)}')" class="secondary-btn btn-sm" style="color: var(--error);">Delete</button>
+        <p class="group-description">${esc(group.description || 'No description provided for this group.')}</p>
+        <div class="group-sites-section">
+          <span class="sites-label">Associated Sites</span>
+          <div class="sites-list">
+            ${sites.map(name => `<span class="site-tag">${esc(name)}</span>`).join('')}
+            ${!sites.length ? '<span class="muted" style="font-size:12px;">No sites linked</span>' : ''}
+          </div>
         </div>
-      </div>
-      <p class="muted" style="font-size: 11px; margin-top: 12px;">Sites: ${esc(siteNames)}</p>
-    </div>`;
-  }).join("") : `<p class="muted">No groups yet.</p>`;
+      </div>`;
+  }).join("") + `</div>`;
+  
+  if ($("groupCount")) $("groupCount").textContent = groups.length;
+  lucide.createIcons();
 }
 
 function selectedCheckboxValues(name) { return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((input) => input.value); }
@@ -449,14 +474,30 @@ window.deleteFaq = async function deleteFaq(faqId) {
   } catch (error) { alert(error.message); }
 };
 
-window.convertLog = async function convertLog(logId) {
+window.convertLog = function convertLog(logId) {
   const log = state.logs.find((item) => item.id === logId);
   if (!log) return;
-  const answer = prompt("Answer to save for this FAQ:", log.answer);
-  if (!answer) return;
-  const created = await api(`/api/logs/${logId}/convert-to-faq`, { method: "POST", body: JSON.stringify({ question: log.question, answer, aliases: [], site_id: log.site_id, group_id: "" }) });
-  state.faqs.unshift(created);
-  switchTab('faqs');
+
+  // Reset modal state
+  $("faqModalTitle").textContent = "Convert Log to FAQ";
+  $("faqId").value = "";
+  $("faqQuestion").value = "";
+  $("faqAnswer").value = "";
+  $("faqAliases").value = "";
+  $("faqTargetGroup").value = "";
+
+  const type = log.response_type; // 'faq_hit', 'llm_fallback', 'helpline'
+
+  if (type === 'helpline') {
+    $("faqQuestion").value = log.question;
+  } else if (type === 'llm_fallback') {
+    $("faqQuestion").value = log.question;
+    $("faqAnswer").value = log.answer;
+  } else if (type === 'faq_hit') {
+    $("faqAliases").value = log.question;
+  }
+
+  $("faqModal").showModal();
 };
 
 window.editGroup = function editGroup(groupId) {
@@ -532,7 +573,6 @@ $("registerForm").addEventListener("submit", async (event) => {
 });
 
 $("logoutBtn").addEventListener("click", () => { auth.signOut(); localStorage.removeItem("portal_session"); showLogin(); });
-$("refreshBtn").addEventListener("click", bootstrapPortal);
 $("siteChooser").addEventListener("change", () => { const id = idFromChooser($("siteChooser").value, state.sites); if (id) selectSite(id); });
 document.querySelectorAll(".nav-item").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 $("createFaqBtn").addEventListener("click", () => { $("faqId").value = ""; $("faqForm").reset(); $("faqModalTitle").textContent = "Add FAQ"; $("faqModal").showModal(); });

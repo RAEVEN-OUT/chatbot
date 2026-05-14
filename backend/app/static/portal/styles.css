@@ -1147,3 +1147,169 @@ label {
 /* ==========================================================================
    End Bot Tester Redesign
    ========================================================================== */
+
+/* ==========================================================================
+   Groups Section Redesign (Isolated)
+   ========================================================================== */
+
+#groups {
+  --group-primary: #1C2340;
+  --group-secondary: #2E3A66;
+  --group-accent: #5B7FFF;
+  --group-bg: #F5F7FC;
+  --group-card: #FFFFFF;
+  --group-border: #E2E8F0;
+  --group-text-main: #111827;
+  --group-text-muted: #6B7280;
+  
+  display: none;
+  flex-direction: column;
+  gap: 24px;
+}
+
+#groups.active-panel {
+  display: flex;
+}
+
+#groups .groups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+}
+
+#groups .group-card {
+  background: var(--group-card);
+  border: 1px solid var(--group-border);
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  position: relative;
+}
+
+#groups .group-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--group-accent);
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.1);
+}
+
+#groups .group-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+#groups .group-card-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#groups .group-icon-circle {
+  width: 40px;
+  height: 40px;
+  background: #EEF2FF;
+  color: var(--group-accent);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#groups .group-card-title h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--group-primary);
+  margin: 0;
+}
+
+#groups .group-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#groups .group-description {
+  font-size: 14px;
+  color: var(--group-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+#groups .group-sites-section {
+  border-top: 1px solid var(--group-border);
+  padding-top: 16px;
+}
+
+#groups .sites-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--group-text-muted);
+  margin-bottom: 8px;
+  display: block;
+}
+
+#groups .sites-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#groups .site-tag {
+  background: #F8FAFC;
+  border: 1px solid var(--group-border);
+  color: var(--group-text-main);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Form Styling */
+#groups .form-card {
+  background: white;
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--group-border);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 8px;
+}
+
+#groups .group-form .input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+#groups .check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  background: var(--group-bg);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--group-border);
+  margin-top: 8px;
+}
+
+#groups .checkbox-label {
+  margin: 0;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid var(--group-border);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+#groups .checkbox-label:hover {
+  border-color: var(--group-accent);
+  background: #F5F7FF;
+}
+
+/* ==========================================================================
+   End Groups Section Redesign
+   ========================================================================== */

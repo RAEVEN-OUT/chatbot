@@ -100,12 +100,6 @@
             <h1 id="panelTitle">Analytics</h1>
             <p id="panelSubtitle" class="muted">Overview of your chatbot performance and usage.</p>
           </div>
-          <div class="header-actions">
-            <button id="refreshBtn" class="secondary-btn">
-              <i data-lucide="rotate-cw"></i>
-              <span>Refresh</span>
-            </button>
-          </div>
         </header>
 
         <section class="content-panels">
@@ -273,29 +267,47 @@
           <!-- Groups Panel -->
           <div id="groups" class="panel">
             <div class="form-card">
-              <h3>Create / Edit Group</h3>
+              <div class="card-header" style="margin-bottom: 24px;">
+                <h3 id="groupFormTitle">Manage Site Group</h3>
+                <p class="muted">Group multiple sites to share a common knowledge base.</p>
+              </div>
               <form id="groupForm" class="group-form">
                 <div class="input-grid">
-                  <input id="groupId" placeholder="Group ID (optional)" />
-                  <input id="groupName" placeholder="Group Name" required />
-                  <div class="span-all">
-                    <input id="groupDescription" placeholder="Description" />
+                  <div class="input-group">
+                    <label>Group ID (System)</label>
+                    <input id="groupId" placeholder="Auto-generated" />
                   </div>
-                  <div class="span-all">
-                    <label>Sites in group</label>
+                  <div class="input-group">
+                    <label>Group Name</label>
+                    <input id="groupName" placeholder="e.g. Healthcare Services" required />
+                  </div>
+                  <div class="input-group span-all">
+                    <label>Description</label>
+                    <input id="groupDescription" placeholder="Optional description for this group" />
+                  </div>
+                  <div class="input-group span-all">
+                    <label>Sites in Group</label>
                     <div id="groupSiteChecks" class="check-grid"></div>
                   </div>
                 </div>
-                <button type="submit" class="primary-btn">Save Group</button>
+                <div class="form-actions" style="margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end;">
+                  <button type="button" class="secondary-btn" onclick="$('groupForm').reset()">Clear</button>
+                  <button type="submit" class="primary-btn">Save Group Configuration</button>
+                </div>
               </form>
             </div>
-            <div class="toolbar">
-               <div class="search-box">
+
+            <div class="toolbar-primary">
+              <div class="search-field">
                 <i data-lucide="search"></i>
-                <input id="groupSearch" placeholder="Search groups..." />
+                <input id="groupSearch" placeholder="Search existing groups..." oninput="renderGroups()" />
+              </div>
+              <div class="status-meta">
+                <span class="meta-item"><i data-lucide="info"></i> Total Groups: <b id="groupCount">0</b></span>
               </div>
             </div>
-            <div id="groupsList" class="groups-table"></div>
+            
+            <div id="groupsList"></div>
           </div>
 
           <!-- Tester Panel -->
