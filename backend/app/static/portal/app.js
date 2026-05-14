@@ -1,92 +1,67 @@
-// ──────────────────────────────────────────────────
-// State
-// ──────────────────────────────────────────────────
-const state = {
-  sites: [],       // sites the logged-in user can access
-  currentSiteId: "",
-  faqs: [],
-  logs: [],
-  sessionId: "",
-  principal: null,
-};
-
+const state = { sites: [], groups: [], faqs: [], logs: [], currentSiteId: "", currentGroupId: "", sessionId: "", principal: null };
 const $ = (id) => document.getElementById(id);
 
-// ──────────────────────────────────────────────────
-// Firebase — copy your config from the Admin panel
-// ──────────────────────────────────────────────────
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
+  apiKey: "AIzaSyC1QxlKBkLpT2htParIuodhPNX6qtTGnlU",
+  authDomain: "chatbot-faq-76909.firebaseapp.com",
+  projectId: "chatbot-faq-76909",
 };
 
-try {
-  firebase.initializeApp(firebaseConfig);
-} catch (e) {
-  console.warn("Firebase config missing or already initialised.", e);
-}
+let portalApp;
+try { portalApp = firebase.initializeApp(firebaseConfig, "PortalApp"); } catch { portalApp = firebase.app("PortalApp"); }
+const auth = firebase.auth(portalApp);
 
-// Watch auth state
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    const token = await user.getIdToken(/* forceRefresh */ true);
-    localStorage.setItem("portalFirebaseToken", token);
-    $("userEmail").textContent = user.email;
-    $("logoutBtn").style.display = "inline-block";
-    hideLogin();
-    await bootstrapPortal();
-  } else {
-    localStorage.removeItem("portalFirebaseToken");
+(async () => {
+  await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
+  auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      try {
+        localStorage.setItem("portal_session", await user.getIdToken());
+        $("userEmail").textContent = user.email;
+        $("logoutBtn").style.display = "inline-block";
+        hideLogin();
+        await bootstrapPortal();
+      } catch (error) {
+        console.error(error);
+        auth.signOut();
+      }
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const handoff = params.get("handoff");
+    if (handoff) {
+      window.history.replaceState({}, document.title, window.location.pathname + (params.get("site_id") ? `?site_id=${params.get("site_id")}` : ""));
+      await auth.signInWithCustomToken(handoff);
+      return;
+    }
+
+    localStorage.removeItem("portal_session");
     $("userEmail").textContent = "";
     $("logoutBtn").style.display = "none";
     showLogin();
-  }
-});
+  });
+})();
 
-// ──────────────────────────────────────────────────
-// Auth helpers
-// ──────────────────────────────────────────────────
-function authHeaders(extra = {}) {
-  const token = localStorage.getItem("portalFirebaseToken");
-  const apiKey = localStorage.getItem("portalApiKey");
+async function authHeaders(extra = {}) {
   const headers = { ...extra };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  else if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-  
-  if (!headers["Content-Type"] && !(extra instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
-  }
+  const token = auth.currentUser ? await auth.currentUser.getIdToken() : localStorage.getItem("portal_session");
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (!headers["Content-Type"]) headers["Content-Type"] = "application/json";
   return headers;
 }
 
-function showLogin() {
-  $("loginOverlay").classList.add("active");
-  $("mainLayout").style.display = "none";
-}
-
-function hideLogin() {
-  $("loginOverlay").classList.remove("active");
-  $("mainLayout").style.display = "grid";
-}
-
-function setStatus(text) { $("statusText").textContent = text; }
-function setLoading(on)   { $("globalLoading").style.display = on ? "inline-block" : "none"; }
-
-// ──────────────────────────────────────────────────
-// API wrapper
-// ──────────────────────────────────────────────────
 async function api(path, options = {}) {
-  setLoading(true);
-  const headers = authHeaders(options.headers || {});
+  const headers = await authHeaders(options.headers || {});
   if (options.body instanceof FormData) delete headers["Content-Type"];
+  setLoading(true);
   try {
-    const res = await fetch(path, { ...options, headers });
-    if (res.status === 401) { showLogin(); throw new Error("Session expired. Please log in again."); }
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text || `Request failed: ${res.status}`);
+    const res = await fetch(path.startsWith("/") ? path : `/${path}`, { ...options, headers });
+    if (res.status === 401) {
+      localStorage.removeItem("portal_session");
+      throw new Error("Session expired. Please refresh and try again.");
     }
+    if (!res.ok) throw new Error(await res.text() || `Request failed: ${res.status}`);
     if (res.status === 204) return null;
     return res.json();
   } finally {
@@ -94,475 +69,408 @@ async function api(path, options = {}) {
   }
 }
 
-// ──────────────────────────────────────────────────
-// Bootstrap — called right after sign-in
-// ──────────────────────────────────────────────────
+function showLogin() { $("loginOverlay").classList.add("active"); $("mainLayout").style.display = "none"; }
+function hideLogin() { $("loginOverlay").classList.remove("active"); $("mainLayout").style.display = "grid"; }
+function setStatus(text) { $("statusText").textContent = text; }
+function setLoading(on) { $("globalLoading").style.display = on ? "inline-block" : "none"; }
+function esc(v = "") { return String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+function formatDate(value) { return value ? new Date(value).toLocaleString() : "n/a"; }
+function recentStamp(record) {
+  const created = record.created_at ? new Date(record.created_at).getTime() : 0;
+  const updated = record.updated_at ? new Date(record.updated_at).getTime() : 0;
+  return updated && updated > created + 1000 ? `Updated ${formatDate(record.updated_at)}` : `Created ${formatDate(record.created_at)}`;
+}
+function siteDisplay(site) { return site ? `${site.name} (${site.id})` : ""; }
+function groupDisplay(group) { return group ? `${group.name} (${group.id})` : ""; }
+function idFromChooser(value, items) {
+  const trimmed = value.trim();
+  const paren = trimmed.match(/\(([^()]+)\)$/);
+  const candidate = paren ? paren[1] : trimmed;
+  return items.find((item) => item.id === candidate || item.name === trimmed)?.id || candidate;
+}
+function currentSite() { return state.sites.find((site) => site.id === state.currentSiteId); }
+
 async function bootstrapPortal() {
-  setStatus("Loading…");
-  try {
-    const [me, sites] = await Promise.all([api("/api/me"), api("/api/sites")]);
-    state.principal = me;
-    state.sites = sites;
-
-    if (!state.sites.length) {
-      // User exists in Firebase but no sites assigned
-      showNoAccess();
-      return;
-    }
-
-    // Default to first site
-    state.currentSiteId = state.currentSiteId || state.sites[0].id;
-    renderSiteSwitcher();
-    renderSnippet();
-    setStatus(`${me.email} | ${me.role}`);
-    await Promise.all([refreshFaqs(), refreshLogs(), refreshAnalytics()]);
-    prefillSettings();
-    updateTesterSiteName();
-  } catch (err) {
-    setStatus("Error: " + err.message);
-  }
-}
-
-// ──────────────────────────────────────────────────
-// Site switcher
-// ──────────────────────────────────────────────────
-function renderSiteSwitcher() {
-  if (state.sites.length === 1) {
-    // Single site → show fixed badge, hide <select>
-    const site = state.sites[0];
-    $("siteBadgeText").textContent = site.name;
-    $("siteDot").style.background = site.primary_color || "var(--brand)";
-    $("siteBadge").style.display = "inline-flex";
-    $("siteSelect").style.display = "none";
-  } else {
-    // Multiple sites → show <select> switcher
-    $("siteBadge").style.display = "none";
-    const sel = $("siteSelect");
-    sel.innerHTML = state.sites
-      .map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`)
-      .join("");
-    sel.value = state.currentSiteId;
-    sel.style.display = "inline-block";
-  }
-}
-
-$("siteSelect").addEventListener("change", async (e) => {
-  state.currentSiteId = e.target.value;
-  state.sessionId = "";
-  renderSnippet();
-  updateTesterSiteName();
+  setStatus("Loading...");
+  const [me, sites, groups] = await Promise.all([api("/api/me"), api("/api/sites"), api("/api/groups")]);
+  state.principal = me;
+  state.sites = sites;
+  state.groups = groups;
+  if (!state.sites.length) return showNoAccess();
+  const params = new URLSearchParams(window.location.search);
+  state.currentSiteId = params.get("site_id") || state.currentSiteId || state.sites[0].id;
+  renderReferenceControls();
+  syncSiteChooser();
+  renderGroups();
   await Promise.all([refreshFaqs(), refreshLogs(), refreshAnalytics()]);
   prefillSettings();
-});
-
-// ──────────────────────────────────────────────────
-// No-access fallback
-// ──────────────────────────────────────────────────
-function showNoAccess() {
-  $("mainLayout").style.display = "grid";
-  document.querySelector(".content").innerHTML = `
-    <div class="no-access">
-      <h2>No Site Access</h2>
-      <p>Your account has not been assigned to any site yet.</p>
-      <p>Please contact your system administrator to get access.</p>
-    </div>`;
+  renderSnippet();
+  setStatus(`${me.email} | owner`);
 }
 
-// ──────────────────────────────────────────────────
-// Data refreshes
-// ──────────────────────────────────────────────────
+function showNoAccess() {
+  $("mainLayout").style.display = "grid";
+  document.querySelector(".content").innerHTML = `<div class="no-access"><h2>No Site Access</h2><p>Create a site from registration or contact support.</p></div>`;
+}
+
+function renderReferenceControls() {
+  $("siteOptions").innerHTML = state.sites.map((site) => `<option value="${esc(siteDisplay(site))}"></option>`).join("");
+  $("groupOptions").innerHTML = state.groups.map((group) => `<option value="${esc(groupDisplay(group))}"></option>`).join("");
+  $("siteChooser").style.display = state.sites.length > 1 ? "inline-block" : "none";
+  document.querySelector('[data-tab="groups"]').style.display = state.sites.length > 1 ? "block" : "none";
+}
+
+function syncSiteChooser() {
+  $("siteChooser").value = siteDisplay(currentSite());
+  $("testerSiteName").textContent = currentSite()?.name || "No site selected";
+}
+
+function selectSite(siteId) {
+  state.currentSiteId = siteId;
+  state.currentGroupId = "";
+  state.sessionId = "";
+  syncSiteChooser();
+  $("testMessages").innerHTML = "";
+  $("leadForm").classList.remove("hidden");
+  $("testForm").classList.add("hidden");
+  refreshFaqs();
+  refreshLogs();
+  refreshAnalytics();
+  prefillSettings();
+  renderSnippet();
+}
+
 async function refreshFaqs() {
-  if (!state.currentSiteId) return;
-  state.faqs = await api(`/api/faqs?site_id=${encodeURIComponent(state.currentSiteId)}`);
+  const params = new URLSearchParams();
+  if (state.currentGroupId) params.set("group_id", state.currentGroupId);
+  else params.set("site_id", state.currentSiteId);
+  state.faqs = await api(`/api/faqs?${params.toString()}`);
   renderFaqs();
 }
 
+function renderFaqs() {
+  const query = $("faqSearch").value.trim().toLowerCase();
+  const faqs = state.faqs.filter((faq) => !query || [faq.question, faq.answer, faq.id, ...(faq.aliases || [])].some((value) => String(value || "").toLowerCase().includes(query)));
+  $("faqsList").innerHTML = faqs.length ? faqs.map((faq) => `
+    <article class="faq-item">
+      <div><h3>${esc(faq.question)}</h3><p class="meta">${recentStamp(faq)}</p></div>
+      <div class="faq-answer">${esc(faq.answer)}</div>
+      <p class="meta">Aliases: ${esc((faq.aliases || []).join(", ") || "none")}</p>
+      <div class="actions"><button class="ghost" onclick="editFaq('${esc(faq.id)}')">Edit</button><button class="danger" onclick="deleteFaq('${esc(faq.id)}')">Delete</button></div>
+    </article>`).join("") : `<p class="meta">No FAQs yet.</p>`;
+}
+
 async function refreshLogs() {
-  if (!state.currentSiteId) return;
   const p = new URLSearchParams({ site_id: state.currentSiteId, limit: "200" });
-  if ($("fallbackOnly").checked) p.set("fallback_only", "true");
+  if ($("logTypeFilter").value) p.set("response_type", $("logTypeFilter").value);
+  if ($("logDateFilter").value) p.set("since", $("logDateFilter").value);
   state.logs = await api(`/api/logs?${p.toString()}`);
   renderLogs();
 }
 
-async function refreshAnalytics() {
-  if (!state.currentSiteId) return;
-  try {
-    const data = await api(`/api/sites/${state.currentSiteId}/analytics`);
-    $("statTotal").textContent       = data.total_queries;
-    $("statHitRate").textContent     = `${data.hit_rate}%`;
-    $("statFaqHits").textContent     = `${data.faq_hits} hits`;
-    $("statLlmRate").textContent     = `${data.llm_rate}%`;
-    $("statLlmHits").textContent     = `${data.llm_fallbacks} fallbacks`;
-    $("statHelplineRate").textContent= `${data.helpline_rate}%`;
-    $("topFaqsList").innerHTML = data.top_faqs.length
-      ? data.top_faqs.map((faq) => `
-          <div class="row">
-            <p class="row-title" style="margin:0; font-weight:bold;">${esc(faq.question)}</p>
-            <div class="meta" style="font-size:1.1rem; font-weight:bold; color:var(--brand);">
-              ${faq.count} <span style="font-size:0.8rem; font-weight:normal;">uses</span>
-            </div>
-            <div></div>
-          </div>`).join("")
-      : `<p style="color:var(--muted); padding:1rem;">No FAQs used yet.</p>`;
-  } catch (e) { console.error("Analytics error:", e); }
-}
-
-// ──────────────────────────────────────────────────
-// Renderers
-// ──────────────────────────────────────────────────
-function esc(v = "") {
-  return String(v)
-    .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function renderFaqs() {
-  $("faqsList").innerHTML = state.faqs.length
-    ? state.faqs.map((faq) => `
-        <article class="faq-item">
-          <div>
-            <h3>${esc(faq.question)}</h3>
-            <p class="meta">${esc(faq.id)}</p>
-          </div>
-          <div class="faq-answer">${esc(faq.answer)}</div>
-          <p class="meta">Aliases: ${esc((faq.aliases || []).join(", ") || "none")}</p>
-          <div class="actions">
-            <button class="ghost" onclick="editFaq('${faq.id}')">Edit</button>
-            <button class="danger" onclick="deleteFaq('${faq.id}')">Delete</button>
-          </div>
-        </article>`).join("")
-    : `<p style="color:var(--muted); padding:1rem;">No FAQs yet. Add one above!</p>`;
-}
-
 function renderLogs() {
-  $("logsList").innerHTML = state.logs.length
-    ? state.logs.map((log) => `
-        <article class="log-item">
-          <div>
-            <h3>${esc(log.question)}</h3>
-            <p class="meta">
-              ${esc(log.response_type)} | ${esc(new Date(log.timestamp).toLocaleString())}
-              | ${esc(log.user_name || "anonymous")}
-            </p>
-          </div>
-          <div class="log-answer">${esc(log.answer)}</div>
-          <p class="meta">
-            ${esc(log.email || "no email")} | ${esc(log.phone || "no phone")}
-            | distance ${log.vector_distance ?? "n/a"}
-          </p>
-          <div class="actions">
-            <button class="secondary" onclick="convertLog('${log.id}')">Add as FAQ</button>
-          </div>
-        </article>`).join("")
-    : `<p style="color:var(--muted); padding:1rem;">No logs yet.</p>`;
+  const query = $("logSearch").value.trim().toLowerCase();
+  const logs = state.logs.filter((log) => !query || [log.question, log.answer, log.email, log.phone, log.user_name].some((value) => String(value || "").toLowerCase().includes(query)));
+  $("logsList").innerHTML = logs.length ? logs.map((log) => `
+    <article class="log-item log-${esc(log.response_type)}">
+      <div><h3>${esc(log.question)}</h3><p class="meta"><span class="badge">${esc(log.response_type.replaceAll("_", " "))}</span> ${formatDate(log.timestamp)}</p></div>
+      <div class="log-answer">${esc(log.answer)}</div>
+      <div class="actions"><button class="secondary" onclick="convertLog('${esc(log.id)}')">Add as FAQ</button></div>
+    </article>`).join("") : `<p class="meta">No logs yet.</p>`;
 }
 
-// ──────────────────────────────────────────────────
-// FAQ CRUD
-// ──────────────────────────────────────────────────
-window.editFaq = function (faqId) {
-  const faq = state.faqs.find((f) => f.id === faqId);
+async function refreshAnalytics() {
+  const data = await api(`/api/sites/${state.currentSiteId}/analytics`);
+  $("statTotal").textContent = data.total_queries;
+  $("statHitRate").textContent = `${data.hit_rate}%`;
+  $("statFaqHits").textContent = `${data.faq_hits} hits`;
+  $("statLlmRate").textContent = `${data.llm_rate}%`;
+  $("statLlmHits").textContent = `${data.llm_fallbacks} fallbacks`;
+  $("statHelplineRate").textContent = `${data.helpline_rate}%`;
+  $("topFaqsList").innerHTML = data.top_faqs.length ? data.top_faqs.map((faq) => `<div class="row"><p class="row-title">${esc(faq.question)}</p><div class="meta">${faq.count} uses</div><div></div></div>`).join("") : `<p class="meta">No FAQs used yet.</p>`;
+}
+
+function renderGroups() {
+  $("groupSiteChecks").innerHTML = state.sites.map((site) => `<label><input name="groupSite" type="checkbox" value="${esc(site.id)}" /> ${esc(site.name)}</label>`).join("");
+  const q = $("groupSearch").value.trim().toLowerCase();
+  const groups = state.groups.filter((group) => !q || [group.name, group.id, group.description].some((value) => String(value || "").toLowerCase().includes(q)));
+  $("groupsList").innerHTML = groups.length ? groups.map((group) => {
+    const siteNames = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id).join(", ");
+    return `<div class="row"><div><p class="row-title">${esc(group.name)}</p><p class="meta">${recentStamp(group)}</p></div><div class="meta">${esc(siteNames)}</div><div class="actions"><button onclick="editGroup('${esc(group.id)}')" class="secondary">Edit</button><button onclick="deleteGroup('${esc(group.id)}')" class="danger">Delete</button></div></div>`;
+  }).join("") : `<p class="meta">No groups yet.</p>`;
+}
+
+function selectedCheckboxValues(name) { return [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((input) => input.value); }
+
+function prefillSettings() {
+  const site = currentSite();
+  if (!site) return;
+  $("setHelpline").value = site.helpline_number || "";
+  $("setWelcome").value = site.welcome_message || "";
+  $("setFallback").value = site.fallback_message || "";
+  $("setAcceptDist").value = site.faq_accept_distance ?? "";
+  $("setCandidateDist").value = site.llm_candidate_distance ?? "";
+  $("setOrigins").value = (site.allowed_origins || []).join(", ");
+  $("setPrimaryColor").value = site.primary_color || "#22c55e";
+  $("setBotName").value = site.bot_name || "";
+  $("setBotAvatar").value = site.bot_avatar_url || "";
+  $("setLauncher").value = site.launcher_icon || "?";
+  $("setActive").checked = site.active !== false;
+}
+
+function siteSettingsPayload(prefix) {
+  return {
+    name: $(`${prefix}Name`)?.value?.trim() || currentSite()?.name || "New site",
+    domain: $(`${prefix}Domain`)?.value?.trim() || "",
+    helpline_number: $(`${prefix}Helpline`)?.value?.trim() || "",
+    welcome_message: $(`${prefix}Welcome`)?.value?.trim() || "Hi, how can I help?",
+    fallback_message: $(`${prefix}Fallback`)?.value?.trim() || "I could not find the exact answer. Please contact our helpline.",
+  };
+}
+
+function renderSnippet(targetId = "snippetCode") {
+  if (!state.currentSiteId && targetId === "snippetCode") return;
+  const origin = window.location.origin;
+  const siteId = targetId === "snippetCode" ? state.currentSiteId : state.lastRegisteredSiteId;
+  $(targetId).textContent = `<!-- FAQ Chatbot Widget -->\n<script src="${origin}/widget/chatbot-widget.js" data-site-id="${siteId}" data-api-base="${origin}" data-collect-lead="true"><\\/script>`;
+}
+
+window.editFaq = function editFaq(faqId) {
+  const faq = state.faqs.find((item) => item.id === faqId);
   if (!faq) return;
-  $("faqId").value       = faq.id;
+  $("faqModalTitle").textContent = "Edit FAQ";
+  $("faqId").value = faq.id;
   $("faqQuestion").value = faq.question;
-  $("faqAliases").value  = (faq.aliases || []).join("\n");
-  $("faqAnswer").value   = faq.answer;
-  switchTab("faqs");
-  $("faqQuestion").focus();
+  $("faqAliases").value = (faq.aliases || []).join("\n");
+  $("faqAnswer").value = faq.answer;
+  $("faqTargetGroup").value = faq.group_id ? groupDisplay(state.groups.find((group) => group.id === faq.group_id)) : "";
+  $("faqModal").showModal();
 };
 
-window.deleteFaq = async function (faqId) {
+window.deleteFaq = async function deleteFaq(faqId) {
   if (!confirm("Delete this FAQ?")) return;
   const prev = [...state.faqs];
-  state.faqs = state.faqs.filter((f) => f.id !== faqId);
+  state.faqs = state.faqs.filter((faq) => faq.id !== faqId);
   renderFaqs();
-  try {
-    await api(`/api/faqs/${faqId}`, { method: "DELETE" });
-    refreshAnalytics();
-  } catch (e) {
-    state.faqs = prev;
-    renderFaqs();
-    alert("Delete failed: " + e.message);
-  }
+  try { await api(`/api/faqs/${faqId}`, { method: "DELETE" }); } catch (error) { state.faqs = prev; renderFaqs(); alert(error.message); }
 };
 
-window.convertLog = async function (logId) {
-  const log = state.logs.find((l) => l.id === logId);
+window.convertLog = async function convertLog(logId) {
+  const log = state.logs.find((item) => item.id === logId);
   if (!log) return;
   const answer = prompt("Answer to save for this FAQ:", log.answer);
   if (!answer) return;
-  await api(`/api/logs/${logId}/convert-to-faq`, {
-    method: "POST",
-    body: JSON.stringify({ answer, site_ids: [log.site_id], aliases: [] }),
-  });
-  await Promise.all([refreshFaqs(), refreshLogs()]);
+  const created = await api(`/api/logs/${logId}/convert-to-faq`, { method: "POST", body: JSON.stringify({ question: log.question, answer, aliases: [], site_id: log.site_id, group_id: "" }) });
+  state.faqs.unshift(created);
+  renderFaqs();
 };
 
-$("faqForm").addEventListener("submit", async (e) => {
+window.editGroup = function editGroup(groupId) {
+  const group = state.groups.find((item) => item.id === groupId);
+  if (!group) return;
+  $("groupId").value = group.id;
+  $("groupName").value = group.name;
+  $("groupDescription").value = group.description || "";
+  document.querySelectorAll("input[name='groupSite']").forEach((input) => input.checked = group.site_ids.includes(input.value));
+};
+
+window.deleteGroup = async function deleteGroup(groupId) {
+  if (!confirm("Delete this group?")) return;
+  const prev = [...state.groups];
+  state.groups = state.groups.filter((group) => group.id !== groupId);
+  renderGroups();
+  try { await api(`/api/groups/${groupId}`, { method: "DELETE" }); } catch (error) { state.groups = prev; renderGroups(); alert(error.message); }
+};
+
+function clearFaqForm() { $("faqId").value = ""; $("faqQuestion").value = ""; $("faqAliases").value = ""; $("faqAnswer").value = ""; $("faqTargetGroup").value = ""; }
+function openFaqModal() { clearFaqForm(); $("faqModalTitle").textContent = "Add FAQ"; $("faqModal").showModal(); }
+
+function switchTab(tabId) {
+  document.querySelectorAll(".tab").forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabId));
+  document.querySelectorAll(".panel").forEach((panel) => panel.classList.toggle("active-panel", panel.id === tabId));
+  if (tabId === "settings") { prefillSettings(); renderSnippet(); }
+}
+
+$("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const faqId   = $("faqId").value.trim();
+  $("loginError").textContent = "Signing in...";
+  try {
+    await auth.signInWithEmailAndPassword($("loginEmail").value, $("loginPassword").value);
+    $("loginError").textContent = "";
+  } catch (err) { $("loginError").textContent = err.message; }
+});
+
+$("showRegisterBtn").addEventListener("click", () => $("registerModal").showModal());
+$("closeRegisterBtn").addEventListener("click", () => $("registerModal").close());
+$("registerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
   const payload = {
-    question:  $("faqQuestion").value.trim(),
-    answer:    $("faqAnswer").value.trim(),
-    aliases:   $("faqAliases").value.split("\n").map((s) => s.trim()).filter(Boolean),
-    site_ids:  [state.currentSiteId],
-    group_ids: [],
-    active:    true,
+    email: $("regEmail").value.trim(),
+    password: $("regPassword").value,
+    site: {
+      name: $("regSiteName").value.trim(),
+      domain: $("regDomain").value.trim(),
+      helpline_number: $("regHelpline").value.trim(),
+      welcome_message: $("regWelcome").value.trim() || "Hi, how can I help?",
+      fallback_message: $("regFallback").value.trim() || "I could not find the exact answer. Please contact our helpline.",
+    },
   };
-  try {
-    if (faqId) {
-      const prev  = [...state.faqs];
-      const idx   = state.faqs.findIndex((f) => f.id === faqId);
-      if (idx !== -1) { state.faqs[idx] = { ...state.faqs[idx], ...payload }; renderFaqs(); }
-      try {
-        const updated = await api(`/api/faqs/${faqId}`, { method: "PATCH", body: JSON.stringify(payload) });
-        if (idx !== -1) state.faqs[idx] = updated;
-        renderFaqs();
-      } catch (err) {
-        state.faqs = prev; renderFaqs();
-        alert("Update failed: " + err.message); return;
-      }
-    } else {
-      const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
-      state.faqs.unshift(created);
-      renderFaqs();
-    }
-    clearFaqForm();
-    refreshAnalytics();
-  } catch (err) {
-    alert("Save failed: " + err.message);
-  }
+  const result = await fetch("/api/register-site-owner", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(async (res) => {
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  });
+  state.lastRegisteredSiteId = result.site.id;
+  $("registerSnippetWrap").classList.remove("hidden");
+  renderSnippet("registerSnippet");
+  await auth.signInWithCustomToken(result.firebase_token);
 });
 
-function clearFaqForm() {
-  $("faqId").value       = "";
-  $("faqQuestion").value = "";
-  $("faqAliases").value  = "";
-  $("faqAnswer").value   = "";
-}
+$("logoutBtn").addEventListener("click", () => { auth.signOut(); localStorage.removeItem("portal_session"); showLogin(); });
+$("refreshBtn").addEventListener("click", bootstrapPortal);
+$("siteChooser").addEventListener("change", () => { const id = idFromChooser($("siteChooser").value, state.sites); if (id) selectSite(id); });
+document.querySelectorAll(".tab").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+$("createFaqBtn").addEventListener("click", openFaqModal);
+$("closeFaqModalBtn").addEventListener("click", () => $("faqModal").close());
 $("clearFaqBtn").addEventListener("click", clearFaqForm);
-
-// ── CSV Import ──
-$("importCsvBtn").addEventListener("click", () => {
-  if (!state.currentSiteId) { alert("No site selected."); return; }
-  $("csvFile").click();
+$("faqSearch").addEventListener("input", renderFaqs);
+$("groupSearch").addEventListener("input", renderGroups);
+$("logSearch").addEventListener("input", renderLogs);
+["logTypeFilter", "logDateFilter"].forEach((id) => $(id).addEventListener("change", refreshLogs));
+$("faqGroupChooser").addEventListener("change", () => {
+  const id = idFromChooser($("faqGroupChooser").value, state.groups);
+  state.currentGroupId = id;
+  refreshFaqs();
 });
-
-$("csvFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file || !state.currentSiteId) return;
-  const formData = new FormData();
-  formData.append("file", file);
-  try {
-    setStatus("Uploading CSV…");
-    $("importCsvBtn").disabled = true;
-    const result = await api(`/api/sites/${state.currentSiteId}/faqs/upload`, {
-      method: "POST", body: formData, headers: {},
-    });
-    if (result.task_id) {
-      let done = false;
-      while (!done) {
-        setStatus("Queued: waiting to start…");
-        await new Promise((r) => setTimeout(r, 2000));
-        const task = await api(`/api/tasks/${result.task_id}`);
-        if (task.status === "processing") {
-          setStatus(`Indexing: ${task.processed_items} / ${task.total_items} rows…`);
-        } else if (task.status === "completed") {
-          setStatus(`Done: indexed ${task.total_items} rows.`);
-          alert("Import completed!");
-          done = true;
-        } else if (task.status === "failed") {
-          setStatus("Import failed.");
-          alert("Import failed: " + task.error_message);
-          done = true;
-        }
-      }
-    }
-    await refreshFaqs();
-  } catch (err) {
-    alert("Import failed: " + err.message);
-  } finally {
-    e.target.value = "";
-    $("importCsvBtn").disabled = false;
-    setStatus("Ready");
-  }
+$("faqTargetGroup").addEventListener("input", () => {
+  state.currentGroupId = idFromChooser($("faqTargetGroup").value, state.groups);
 });
-
-// ──────────────────────────────────────────────────
-// Site Settings
-// ──────────────────────────────────────────────────
-function prefillSettings() {
-  const site = state.sites.find((s) => s.id === state.currentSiteId);
-  if (!site) return;
-  $("setHelpline").value      = site.helpline_number || "";
-  $("setWelcome").value       = site.welcome_message || "";
-  $("setFallback").value      = site.fallback_message || "";
-  $("setAcceptDist").value    = site.faq_accept_distance ?? "";
-  $("setCandidateDist").value = site.llm_candidate_distance ?? "";
-  $("setOrigins").value       = (site.allowed_origins || []).join(", ");
-  $("setPrimaryColor").value  = site.primary_color || "#22c55e";
-  $("setBotName").value       = site.bot_name || "";
-  $("setBotAvatar").value     = site.bot_avatar_url || "";
-  $("setLauncher").value      = site.launcher_icon || "?";
-  $("setActive").checked      = site.active !== false;
-}
+$("addSiteBtn").addEventListener("click", () => $("siteModal").showModal());
+$("closeSiteModalBtn").addEventListener("click", () => $("siteModal").close());
 
 $("settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const payload = {
-    helpline_number:      $("setHelpline").value.trim(),
-    welcome_message:      $("setWelcome").value.trim(),
-    fallback_message:     $("setFallback").value.trim(),
-    allowed_origins:      $("setOrigins").value.split(",").map((s) => s.trim()).filter(Boolean),
-    primary_color:        $("setPrimaryColor").value,
-    bot_name:             $("setBotName").value.trim() || "Support Bot",
-    bot_avatar_url:       $("setBotAvatar").value.trim(),
-    launcher_icon:        $("setLauncher").value.trim() || "?",
-    active:               $("setActive").checked,
+    helpline_number: $("setHelpline").value.trim(),
+    welcome_message: $("setWelcome").value.trim(),
+    fallback_message: $("setFallback").value.trim(),
+    allowed_origins: $("setOrigins").value.split(",").map((s) => s.trim()).filter(Boolean),
+    primary_color: $("setPrimaryColor").value,
+    bot_name: $("setBotName").value.trim() || "Support Bot",
+    bot_avatar_url: $("setBotAvatar").value.trim(),
+    launcher_icon: $("setLauncher").value.trim() || "?",
+    active: $("setActive").checked,
   };
-  if ($("setAcceptDist").value !== "")
-    payload.faq_accept_distance = Number($("setAcceptDist").value);
-  if ($("setCandidateDist").value !== "")
-    payload.llm_candidate_distance = Number($("setCandidateDist").value);
+  if ($("setAcceptDist").value !== "") payload.faq_accept_distance = Number($("setAcceptDist").value);
+  if ($("setCandidateDist").value !== "") payload.llm_candidate_distance = Number($("setCandidateDist").value);
+  const idx = state.sites.findIndex((site) => site.id === state.currentSiteId);
+  const prev = [...state.sites];
+  if (idx !== -1) state.sites[idx] = { ...state.sites[idx], ...payload, updated_at: new Date().toISOString() };
   try {
-    await api(`/api/sites/${state.currentSiteId}`, { method: "PATCH", body: JSON.stringify(payload) });
-    // Refresh local site cache
-    const updated = await api(`/api/sites/${state.currentSiteId}`);
-    const idx = state.sites.findIndex((s) => s.id === state.currentSiteId);
-    if (idx !== -1) state.sites[idx] = updated;
-    renderSiteSwitcher();
-    alert("Settings saved!");
-  } catch (err) {
-    alert("Save failed: " + err.message);
-  }
+    state.sites[idx] = await api(`/api/sites/${state.currentSiteId}`, { method: "PATCH", body: JSON.stringify(payload) });
+    syncSiteChooser();
+    renderSnippet();
+  } catch (error) { state.sites = prev; alert(error.message); }
 });
 
-// ──────────────────────────────────────────────────
-// Widget Snippet
-// ──────────────────────────────────────────────────
-function renderSnippet() {
-  if (!state.currentSiteId) return;
-  const origin = window.location.origin;
-  const code =
-`<!-- FAQ Chatbot Widget -->
-<script
-  src="${origin}/widget/chatbot-widget.js"
-  data-site-id="${state.currentSiteId}"
-  data-api-base="${origin}"
-  data-collect-lead="true">
-<\/script>`;
-  $("snippetCode").textContent = code;
-}
-
-$("copySnippetBtn").addEventListener("click", () => {
-  navigator.clipboard.writeText($("snippetCode").textContent).then(() => {
-    $("copySnippetBtn").textContent = "Copied!";
-    setTimeout(() => ($("copySnippetBtn").textContent = "Copy"), 2000);
-  });
+$("siteForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = siteSettingsPayload("site");
+  const temp = { ...payload, id: `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+  state.sites.unshift(temp);
+  renderReferenceControls();
+  try {
+    const created = await api("/api/sites", { method: "POST", body: JSON.stringify(payload) });
+    state.sites = state.sites.map((site) => site.id === temp.id ? created : site);
+    state.currentSiteId = created.id;
+    $("siteModal").close();
+    renderReferenceControls();
+    syncSiteChooser();
+    renderSnippet();
+  } catch (error) { state.sites = state.sites.filter((site) => site.id !== temp.id); alert(error.message); }
 });
 
-// ──────────────────────────────────────────────────
-// Tester
-// ──────────────────────────────────────────────────
-function updateTesterSiteName() {
-  const site = state.sites.find((s) => s.id === state.currentSiteId);
-  $("testerSiteName").textContent = site?.name || "No site selected";
-}
+$("faqForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const groupId = idFromChooser($("faqTargetGroup").value, state.groups);
+  const payload = {
+    question: $("faqQuestion").value.trim(),
+    answer: $("faqAnswer").value.trim(),
+    aliases: $("faqAliases").value.split("\n").map((s) => s.trim()).filter(Boolean),
+    site_id: groupId ? "" : state.currentSiteId,
+    group_id: groupId || "",
+    active: true,
+  };
+  const faqId = $("faqId").value.trim();
+  const prev = [...state.faqs];
+  try {
+    if (faqId) {
+      const idx = state.faqs.findIndex((faq) => faq.id === faqId);
+      if (idx !== -1) state.faqs[idx] = { ...state.faqs[idx], ...payload, updated_at: new Date().toISOString() };
+      renderFaqs();
+      const updated = await api(`/api/faqs/${faqId}`, { method: "PATCH", body: JSON.stringify(payload) });
+      if (idx !== -1) state.faqs[idx] = updated;
+    } else {
+      const temp = { ...payload, id: `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      state.faqs.unshift(temp);
+      renderFaqs();
+      const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
+      state.faqs = state.faqs.map((faq) => faq.id === temp.id ? created : faq);
+    }
+    renderFaqs();
+    $("faqModal").close();
+    refreshAnalytics();
+  } catch (err) { state.faqs = prev; renderFaqs(); alert(err.message); }
+});
+
+$("groupForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const groupId = $("groupId").value.trim();
+  const payload = { id: groupId || undefined, name: $("groupName").value.trim(), description: $("groupDescription").value.trim(), site_ids: selectedCheckboxValues("groupSite"), active: true };
+  const prev = [...state.groups];
+  try {
+    if (groupId && state.groups.some((group) => group.id === groupId)) {
+      const idx = state.groups.findIndex((group) => group.id === groupId);
+      state.groups[idx] = { ...state.groups[idx], ...payload, updated_at: new Date().toISOString() };
+      renderGroups();
+      const { id, ...patch } = payload;
+      state.groups[idx] = await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
+    } else {
+      const temp = { ...payload, id: groupId || `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      state.groups.unshift(temp);
+      renderGroups();
+      const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
+      state.groups = state.groups.map((group) => group.id === temp.id ? created : group);
+    }
+    $("groupForm").reset();
+    renderReferenceControls();
+    renderGroups();
+  } catch (error) { state.groups = prev; renderGroups(); alert(error.message); }
+});
+
+$("copySnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("snippetCode").textContent));
+$("copyRegisterSnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("registerSnippet").textContent));
 
 $("leadForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!state.currentSiteId) { alert("No site selected."); return; }
-  const btn = $("startSessionBtn");
-  btn.disabled = true; btn.textContent = "Starting…";
-  try {
-    const session = await fetch("/api/chat/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        site_id: state.currentSiteId,
-        name:    $("testName").value,
-        email:   $("testEmail").value,
-        phone:   $("testPhone").value,
-      }),
-    }).then((r) => r.json());
-    state.sessionId = session.id;
-    const site = state.sites.find((s) => s.id === state.currentSiteId);
-    addMessage("bot", `Session started! Ask me anything about ${site?.name || state.currentSiteId}.`);
-    $("leadForm").classList.add("hidden");
-    $("testForm").classList.remove("hidden");
-    $("testQuestion").focus();
-  } catch (err) {
-    addMessage("bot", "Could not start session. Please try again.");
-  } finally {
-    btn.disabled = false; btn.textContent = "Start Session";
-  }
+  const session = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ site_id: state.currentSiteId, name: $("testName").value, email: $("testEmail").value, phone: $("testPhone").value }) }).then((r) => r.json());
+  state.sessionId = session.id;
+  addMessage("bot", `Session started for ${currentSite()?.name || state.currentSiteId}.`);
+  $("leadForm").classList.add("hidden");
+  $("testForm").classList.remove("hidden");
 });
 
 $("testForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const question = $("testQuestion").value.trim();
-  if (!question || !state.currentSiteId) return;
+  if (!question) return;
   addMessage("user", question);
   $("testQuestion").value = "";
-  const sendBtn = $("testSendBtn");
-  sendBtn.disabled = true;
-  const thinkingNode = addTypingIndicator();
-  let botNode = null, botText = "", metadata = {};
+  const bot = addMessage("bot", "Thinking...");
   try {
-    const res = await fetch("/api/chat/message/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        site_id:    state.currentSiteId,
-        session_id: state.sessionId,
-        question,
-        name:  $("testName").value,
-        email: $("testEmail").value,
-        phone: $("testPhone").value,
-      }),
-    });
-    if (!res.ok || !res.body) throw new Error("Stream failed");
-    const reader  = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const ev = JSON.parse(line);
-          if (ev.type === "metadata") { metadata = ev; state.sessionId = ev.session_id || state.sessionId; }
-          if (ev.type === "token") {
-            if (!botNode) { thinkingNode.remove(); botNode = addMessage("bot", ""); }
-            botText += ev.text || "";
-            botNode.querySelector(".msg-text").textContent = botText;
-            $("testMessages").scrollTop = $("testMessages").scrollHeight;
-          }
-        } catch {}
-      }
-    }
-    if (botNode) {
-      const badge = document.createElement("span");
-      badge.style.cssText = "display:block;font-size:0.72rem;margin-top:5px;opacity:0.5;text-transform:uppercase;letter-spacing:0.05em;";
-      badge.textContent = (metadata.response_type || "faq_hit").replaceAll("_", " ");
-      botNode.appendChild(badge);
-    } else {
-      thinkingNode.remove();
-      addMessage("bot", "No response received.");
-    }
+    const response = await fetch("/api/chat/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ site_id: state.currentSiteId, session_id: state.sessionId, question }) }).then((r) => r.json());
+    bot.querySelector(".msg-text").textContent = response.answer;
     refreshLogs();
-  } catch (err) {
-    if (thinkingNode.isConnected) thinkingNode.remove();
-    if (!botNode) addMessage("bot", "Sorry, something went wrong. Please try again.");
-  } finally {
-    sendBtn.disabled = false;
-    $("testQuestion").focus();
-  }
+  } catch { bot.querySelector(".msg-text").textContent = "Sorry, something went wrong."; }
 });
 
 function addMessage(type, text) {
@@ -576,71 +484,3 @@ function addMessage(type, text) {
   $("testMessages").scrollTop = $("testMessages").scrollHeight;
   return node;
 }
-
-function addTypingIndicator() {
-  const node = document.createElement("div");
-  node.className = "message bot";
-  node.innerHTML = `<span class="msg-text" style="opacity:0.6;font-style:italic;">Thinking</span>
-    <span style="display:inline-flex;gap:3px;vertical-align:middle;margin-left:6px;">
-      <span style="width:5px;height:5px;border-radius:50%;background:currentColor;animation:blink 1.2s 0s infinite;display:inline-block"></span>
-      <span style="width:5px;height:5px;border-radius:50%;background:currentColor;animation:blink 1.2s 0.2s infinite;display:inline-block"></span>
-      <span style="width:5px;height:5px;border-radius:50%;background:currentColor;animation:blink 1.2s 0.4s infinite;display:inline-block"></span>
-    </span>`;
-  $("testMessages").appendChild(node);
-  $("testMessages").scrollTop = $("testMessages").scrollHeight;
-  return node;
-}
-
-// ──────────────────────────────────────────────────
-// Tab navigation
-// ──────────────────────────────────────────────────
-function switchTab(tabId) {
-  document.querySelectorAll(".tab").forEach((btn) =>
-    btn.classList.toggle("active", btn.dataset.tab === tabId)
-  );
-  document.querySelectorAll(".panel").forEach((panel) =>
-    panel.classList.toggle("active-panel", panel.id === tabId)
-  );
-  // Lazy-load snippet when tab is opened
-  if (tabId === "snippet") renderSnippet();
-  if (tabId === "settings") prefillSettings();
-}
-
-document.querySelectorAll(".tab").forEach((btn) =>
-  btn.addEventListener("click", () => switchTab(btn.dataset.tab))
-);
-
-// ──────────────────────────────────────────────────
-// Login form
-// ──────────────────────────────────────────────────
-$("loginForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  $("loginError").textContent = "Signing in…";
-  try {
-    await firebase.auth().signInWithEmailAndPassword(
-      $("loginEmail").value,
-      $("loginPassword").value
-    );
-    $("loginError").textContent = "";
-  } catch (err) {
-    $("loginError").textContent = err.message;
-  }
-});
-
-$("logoutBtn").addEventListener("click", () => {
-  firebase.auth().signOut();
-  localStorage.removeItem("portalFirebaseToken");
-  localStorage.removeItem("portalApiKey");
-  showLogin();
-});
-
-$("devLoginBtn").addEventListener("click", async () => {
-  const key = $("devApiKey").value;
-  localStorage.setItem("portalApiKey", key || "");
-  localStorage.removeItem("portalFirebaseToken");
-  hideLogin();
-  await bootstrapPortal();
-});
-
-$("refreshBtn").addEventListener("click", bootstrapPortal);
-$("fallbackOnly").addEventListener("change", refreshLogs);

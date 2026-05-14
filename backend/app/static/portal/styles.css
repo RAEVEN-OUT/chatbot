@@ -79,8 +79,29 @@ label { display: block; color: var(--muted); font-size: 13px; font-weight: 650; 
 .panel       { display: none; }
 .active-panel{ display: block; }
 
-.panel-heading { align-items: center; display: flex; justify-content: space-between; margin-bottom: 16px; }
+.panel-heading {
+  align-items: flex-start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 3fr);
+  margin-bottom: 16px;
+}
 .panel-heading h2 { font-size: 22px; margin: 0; }
+
+.toolbar {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  justify-content: stretch;
+  min-width: 0;
+}
+
+.toolbar input,
+.toolbar select {
+  max-width: none;
+  min-width: 0;
+}
 
 /* ── Forms ── */
 .form-grid {
@@ -117,6 +138,22 @@ label { display: block; color: var(--muted); font-size: 13px; font-weight: 650; 
 .faq-item, .log-item { display: grid; gap: 10px; }
 .faq-answer, .log-answer { color: #27312e; white-space: pre-wrap; }
 
+.badge {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 8px;
+  text-transform: uppercase;
+}
+
+.log-faq_hit { border-left: 4px solid var(--brand); }
+.log-llm_fallback { border-left: 4px solid var(--brand-2); }
+.log-helpline { border-left: 4px solid var(--danger); }
+.log-faq_hit .badge { background: #def7ec; color: var(--brand); }
+.log-llm_fallback .badge { background: #dceafe; color: var(--brand-2); }
+.log-helpline .badge { background: #fee4e2; color: var(--danger); }
+
 /* ── Tester ── */
 .tester { display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr) auto; margin-bottom: 16px; }
 .message.user { border-left: 4px solid var(--brand-2); }
@@ -135,6 +172,41 @@ label { display: block; color: var(--muted); font-size: 13px; font-weight: 650; 
   white-space: pre-wrap; word-break: break-all; position: relative; margin-bottom: 12px;
 }
 .copy-btn { position: absolute; top: 10px; right: 10px; font-size: 12px; padding: 4px 10px; }
+
+.snippet-wrap { position: relative; }
+
+.modal {
+  border: 0;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  max-width: min(860px, calc(100vw - 32px));
+  padding: 0;
+  width: 100%;
+}
+
+.modal::backdrop { background: rgba(0, 0, 0, 0.45); }
+.modal-body { box-shadow: none; margin: 0; }
+.modal-title { align-items: center; display: flex; justify-content: space-between; }
+.modal-title h2 { margin: 0; }
+
+.branding-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto 1fr 1fr auto;
+}
+
+.branding-row input[type="color"] {
+  height: 38px;
+  padding: 2px;
+  width: 60px;
+}
+
+.messages {
+  min-height: 220px;
+  max-height: 420px;
+  overflow-y: auto;
+}
 
 /* ── Multi-site selector pill list (no segmented control) ── */
 .site-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -177,7 +249,8 @@ label { display: block; color: var(--muted); font-size: 13px; font-weight: 650; 
 
 @media (max-width: 860px) {
   .topbar, .layout { display: block; }
-  .form-grid, .tester { grid-template-columns: 1fr; }
+  .form-grid, .tester, .branding-row { grid-template-columns: 1fr; }
+  .toolbar { grid-template-columns: 1fr; }
   .sidebar { border-bottom: 1px solid var(--line); border-right: 0; }
   .content { padding: 16px; }
 }

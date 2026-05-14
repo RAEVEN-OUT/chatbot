@@ -49,8 +49,8 @@ class Settings:
     google_cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     firestore_database: str = os.getenv("FIRESTORE_DATABASE", "(default)")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
-    gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
+    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-1.5-flash")
     allowed_origins: list[str] = None  # type: ignore[assignment]
     collect_all_chat_logs: bool = _get_bool("COLLECT_ALL_CHAT_LOGS", True)
     repository_cache_ttl_seconds: int = _get_int("REPOSITORY_CACHE_TTL_SECONDS", 60)

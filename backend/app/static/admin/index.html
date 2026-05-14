@@ -5,18 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>FAQ Chatbot Admin</title>
     <link rel="stylesheet" href="./styles.css" />
-    <style>
-      @keyframes blink {
-        0%, 80%, 100% { opacity: 0.15; transform: scale(0.8); }
-        40% { opacity: 1; transform: scale(1); }
-      }
-    </style>
-    <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
   </head>
   <body>
-    <!-- Login Overlay -->
     <div id="loginOverlay" class="login-overlay active">
       <div class="login-card">
         <h2>Admin Login</h2>
@@ -24,45 +16,34 @@
           <input type="email" id="loginEmail" placeholder="Email" required />
           <input type="password" id="loginPassword" placeholder="Password" required />
           <button type="submit">Sign In</button>
-          <p id="loginError" class="error-text" style="color: var(--danger); margin-top: 1rem;"></p>
+          <p id="loginError" class="error-text"></p>
         </form>
-        <hr style="margin: 2rem 0; border: 1px solid var(--border);" />
-        <p style="color: var(--text-muted); font-size: 0.9rem;">Developer Access</p>
-        <input type="password" id="fallbackKey" placeholder="Admin API Key" />
-        <button type="button" id="useKeyBtn" class="secondary">Use API Key</button>
       </div>
     </div>
 
     <header class="topbar">
       <div class="topbar-left">
         <h1>FAQ Chatbot Admin</h1>
-        <span id="globalLoading" class="loading-spinner" style="display: none; margin-left: 1rem; color: var(--brand); font-size: 0.8rem; font-weight: bold;">Processing...</span>
+        <span id="globalLoading" class="loading-spinner" style="display:none;">Processing...</span>
       </div>
-      <div>
-        <p id="statusText">Local admin</p>
-      </div>
+      <p id="statusText"></p>
       <div class="topbar-actions">
-        <span id="userEmail" style="margin-right: 1rem; color: var(--text-muted);"></span>
-        <button id="logoutBtn" type="button" style="display: none;">Log Out</button>
-        <button id="seedBtn" type="button">Seed Demo</button>
+        <span id="userEmail"></span>
+        <button id="logoutBtn" type="button" style="display:none;">Log Out</button>
       </div>
     </header>
 
-    <main class="layout" id="mainLayout" style="display: none;">
+    <main class="layout" id="mainLayout" style="display:none;">
       <aside class="sidebar">
-        <label for="siteSelect">Current Site</label>
-        <select id="siteSelect"></select>
         <button id="refreshBtn" type="button">Refresh</button>
-
         <nav class="tabs" aria-label="Admin sections">
           <button class="tab active" data-tab="sites" type="button">Sites</button>
           <button class="tab" data-tab="groups" type="button">Groups</button>
           <button class="tab" data-tab="faqs" type="button">FAQs</button>
-          <button class="tab" data-tab="logs" type="button">Fallback Logs</button>
+          <button class="tab" data-tab="logs" type="button">Logs</button>
           <button class="tab" data-tab="analytics" type="button">Analytics</button>
           <button class="tab" data-tab="users" type="button">Users</button>
           <button class="tab" data-tab="tester" type="button">Tester</button>
-          <button class="tab" data-tab="guide" type="button" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 10px;">User Guide</button>
         </nav>
       </aside>
 
@@ -70,38 +51,30 @@
         <section id="sites" class="panel active-panel">
           <div class="panel-heading">
             <h2>Sites</h2>
-          </div>
-          <form id="siteForm" class="form-grid">
-            <input id="siteId" placeholder="site id, optional" />
-            <input id="siteName" placeholder="Site name" required />
-            <input id="siteDomain" placeholder="Domain" />
-            <input id="siteHelpline" placeholder="Helpline number" required />
-            <input id="siteWelcome" placeholder="Welcome message" />
-            <input id="siteFallback" placeholder="Fallback message" />
-            <input id="siteAcceptDistance" type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
-            <input id="siteCandidateDistance" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
-            <input id="siteAllowedOrigins" placeholder="Allowed Origins (comma separated)" />
-            <div class="span-all branding-row" style="display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; align-items: center;">
-              <label style="display: flex; flex-direction: column; font-size: 0.8rem; color: var(--text-muted);">
-                Color
-                <input id="sitePrimaryColor" type="color" value="#22c55e" style="height: 38px; width: 60px; padding: 2px;" />
-              </label>
-              <input id="siteBotName" placeholder="Bot Display Name" />
-              <input id="siteBotAvatar" placeholder="Bot Avatar URL" />
-              <input id="siteLauncherIcon" placeholder="Icon (e.g. 💬, ?, 🤖)" style="width: 120px;" />
+            <div class="toolbar">
+              <input id="siteSearch" placeholder="Search sites" />
+              <select id="siteFilter">
+                <option value="active">Active</option>
+                <option value="deleted">Deleted</option>
+                <option value="all">All</option>
+              </select>
+              <button id="createSiteBtn" type="button">Create Site</button>
             </div>
-            <label class="checkbox-row">
-              <input id="siteActive" type="checkbox" checked />
-              Active
-            </label>
-            <button type="submit">Save Site</button>
-          </form>
+          </div>
           <div id="sitesList" class="table"></div>
         </section>
 
         <section id="groups" class="panel">
           <div class="panel-heading">
             <h2>Groups</h2>
+            <div class="toolbar">
+              <input id="groupSearch" placeholder="Search groups" />
+              <select id="groupFilter">
+                <option value="all">All</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
           </div>
           <form id="groupForm" class="form-grid">
             <input id="groupId" placeholder="group id, optional" />
@@ -109,6 +82,7 @@
             <input id="groupDescription" placeholder="Description" />
             <div class="span-all">
               <label>Sites in group</label>
+              <input id="groupSiteSearch" placeholder="Search sites" />
               <div id="groupSiteChecks" class="check-grid"></div>
             </div>
             <button type="submit">Save Group</button>
@@ -119,146 +93,142 @@
         <section id="faqs" class="panel">
           <div class="panel-heading">
             <h2>FAQs</h2>
+            <div class="toolbar">
+              <input id="faqSearch" placeholder="Search FAQs" />
+              <input id="faqSiteChooser" list="siteOptions" placeholder="Choose site" />
+              <input id="faqGroupChooser" list="groupOptions" placeholder="Choose group" />
+              <button id="createFaqBtn" type="button">Add FAQ</button>
+            </div>
           </div>
-          <form id="faqForm" class="faq-form">
-            <input id="faqId" type="hidden" />
-            <div class="segmented">
-              <label><input name="targetMode" type="radio" value="current" checked /> Current site</label>
-              <label><input name="targetMode" type="radio" value="multiple" /> Multiple sites</label>
-              <label><input name="targetMode" type="radio" value="group" /> Group</label>
-            </div>
-            <div id="multiSiteTarget" class="target-box hidden">
-              <label>Target sites</label>
-              <div id="faqSiteChecks" class="check-grid"></div>
-            </div>
-            <div id="groupTarget" class="target-box hidden">
-              <label for="faqGroupSelect">Target group</label>
-              <select id="faqGroupSelect"></select>
-            </div>
-            <input id="faqQuestion" placeholder="Question" required />
-            <textarea id="faqAliases" placeholder="Aliases, one per line"></textarea>
-            <textarea id="faqAnswer" placeholder="Exact answer to return" required></textarea>
-            <div class="form-actions">
-              <button type="submit">Save FAQ</button>
-              <button id="clearFaqBtn" type="button">Clear</button>
-              <div class="import-action">
-                <input id="csvFile" type="file" accept=".csv" class="hidden" />
-                <button id="importCsvBtn" type="button" class="secondary">Import CSV</button>
-              </div>
-            </div>
-          </form>
           <div id="faqsList" class="faq-list"></div>
         </section>
 
         <section id="logs" class="panel">
           <div class="panel-heading">
-            <h2>Fallback Logs</h2>
-            <label class="checkbox-row">
-              <input id="fallbackOnly" type="checkbox" checked />
-              Hide FAQ hits
-            </label>
+            <h2>Logs</h2>
+            <div class="toolbar">
+              <input id="logSearch" placeholder="Search logs" />
+              <select id="logTypeFilter">
+                <option value="">All types</option>
+                <option value="faq_hit">FAQ hit</option>
+                <option value="llm_fallback">LLM</option>
+                <option value="helpline">Helpline</option>
+              </select>
+              <select id="logDateFilter">
+                <option value="">All time</option>
+                <option value="1d">1 day</option>
+                <option value="7d">Last week</option>
+                <option value="30d">Last month</option>
+              </select>
+              <label class="checkbox-row"><input id="fallbackOnly" type="checkbox" /> Hide FAQ hits</label>
+            </div>
           </div>
           <div id="logsList" class="log-list"></div>
+        </section>
+
+        <section id="analytics" class="panel">
+          <div class="panel-heading">
+            <h2>Analytics</h2>
+            <input id="analyticsSiteChooser" list="siteOptions" placeholder="Choose site" style="max-width:260px;" />
+          </div>
+          <div class="analytics-grid">
+            <div class="stat-card"><h3>Total Queries</h3><p id="statTotal">0</p></div>
+            <div class="stat-card"><h3>FAQ Hit Rate</h3><p id="statHitRate">0%</p><p id="statFaqHits" class="meta">0 hits</p></div>
+            <div class="stat-card"><h3>AI Fallback Rate</h3><p id="statLlmRate">0%</p><p id="statLlmHits" class="meta">0 fallbacks</p></div>
+            <div class="stat-card"><h3>Helpline Escaped</h3><p id="statHelplineRate">0%</p></div>
+          </div>
+          <div class="panel-heading"><h2>Top FAQs</h2></div>
+          <div id="topFaqsList" class="table"></div>
+        </section>
+
+        <section id="users" class="panel">
+          <div class="panel-heading"><h2>User Management</h2></div>
+          <form id="userForm" class="form-grid">
+            <input id="userEmailInput" type="email" placeholder="User email" required />
+            <input id="userPasswordInput" type="password" placeholder="Initial password" required />
+            <div class="span-all">
+              <label>Assign sites</label>
+              <input id="userSiteSearch" placeholder="Search assignable sites" />
+              <div id="userSiteChecks" class="check-grid"></div>
+            </div>
+            <button type="submit" class="span-all">Create User</button>
+          </form>
         </section>
 
         <section id="tester" class="panel">
           <div class="panel-heading">
             <h2>Tester</h2>
-            <span id="testerSiteName" style="font-size:0.85rem; color:var(--text-muted);">No site selected</span>
+            <div class="toolbar">
+              <input id="testerSiteChooser" list="siteOptions" placeholder="Choose site" />
+              <span id="testerSiteName" class="meta">No site selected</span>
+            </div>
           </div>
-          <div id="testMessages" class="messages" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:12px; min-height:200px; max-height:420px;"></div>
-          <form id="leadForm" class="form-grid" style="border-top:1px solid var(--border); padding-top:12px;">
+          <div id="testMessages" class="messages"></div>
+          <form id="leadForm" class="form-grid">
             <input id="testName" placeholder="Name" />
             <input id="testEmail" placeholder="Email" />
             <input id="testPhone" placeholder="Phone" />
             <button id="startSessionBtn" type="submit">Start Session</button>
           </form>
-          <form id="testForm" class="tester hidden" style="border-top:1px solid var(--border); padding-top:12px;">
+          <form id="testForm" class="tester hidden">
             <input id="testQuestion" placeholder="Ask a question..." autocomplete="off" />
             <button id="testSendBtn" type="submit">Send</button>
           </form>
         </section>
-        <section id="analytics" class="panel">
-          <div class="panel-heading">
-            <h2>Analytics Dashboard</h2>
-          </div>
-          <div class="analytics-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
-            <div class="stat-card" style="background: var(--surface); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
-              <h3 style="margin-top: 0; color: var(--text-muted); font-size: 0.9rem;">Total Queries</h3>
-              <p id="statTotal" style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">0</p>
-            </div>
-            <div class="stat-card" style="background: var(--surface); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
-              <h3 style="margin-top: 0; color: var(--text-muted); font-size: 0.9rem;">FAQ Hit Rate</h3>
-              <p id="statHitRate" style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">0%</p>
-              <p id="statFaqHits" style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">0 hits</p>
-            </div>
-            <div class="stat-card" style="background: var(--surface); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
-              <h3 style="margin-top: 0; color: var(--text-muted); font-size: 0.9rem;">AI Fallback Rate</h3>
-              <p id="statLlmRate" style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0;">0%</p>
-              <p id="statLlmHits" style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">0 fallbacks</p>
-            </div>
-            <div class="stat-card" style="background: var(--surface); padding: 1.5rem; border-radius: 8px; border: 1px solid var(--border);">
-              <h3 style="margin-top: 0; color: var(--text-muted); font-size: 0.9rem;">Helpline Escaped</h3>
-              <p id="statHelplineRate" style="font-size: 2rem; font-weight: bold; margin: 0.5rem 0; color: var(--danger);">0%</p>
-            </div>
-          </div>
-          <div class="panel-heading">
-            <h2>Top 5 FAQs</h2>
-          </div>
-          <div id="topFaqsList" class="table"></div>
-        </section>
-
-        <section id="users" class="panel">
-          <div class="panel-heading">
-            <h2>User Management (Phase 5: Auth Only)</h2>
-          </div>
-          <form id="userForm" class="form-grid">
-            <input id="userEmailInput" type="email" placeholder="User Email" required />
-            <input id="userPasswordInput" type="password" placeholder="Initial Password" required />
-            <select id="userRoleSelect">
-              <option value="viewer">Viewer (Read-Only)</option>
-              <option value="editor">Editor (Site Owner)</option>
-              <option value="admin">Admin</option>
-              <option value="super_admin">Super Admin</option>
-            </select>
-            <div class="span-all">
-              <label>Assign to Sites</label>
-              <div id="userSiteChecks" class="check-grid"></div>
-            </div>
-            <button type="submit" class="span-all">Create Firebase User</button>
-          </form>
-          <p class="meta" style="margin-top: 1rem;">Note: Listing users requires Phase 5 Firestore Table. For now, this form creates the account in Firebase Auth directly.</p>
-        </section>
-        
-        <section id="guide" class="panel">
-          <div class="panel-heading">
-            <h2>Admin User Guide</h2>
-          </div>
-          <div style="max-width: 800px; line-height: 1.6; color: var(--text);">
-            <h3 style="color: var(--brand);">1. Groups vs Site-Specific FAQs</h3>
-            <p><strong>Site-Specific FAQs</strong> are unique to a single website. Use this for specific locations, pricing, or local contact info.</p>
-            <p><strong>Group FAQs</strong> are shared across multiple sites. If you edit a Group FAQ, it updates everywhere simultaneously. Use this for global policies like "Refunds" or "Terms of Service".</p>
-            <div style="background: var(--surface-2); padding: 15px; border-left: 4px solid var(--brand-2); margin: 15px 0 30px;">
-              <strong>Pro Tip (Overriding):</strong> If a site is part of a Group, but needs a different answer for one specific question, simply create a new FAQ for that "Current Site". Site-specific answers always win over Group answers!
-            </div>
-
-            <h3 style="color: var(--brand);">2. Advanced A.I. Tuning</h3>
-            <p>When a user asks a question, the A.I. calculates a "Distance Score" (from 0.0 to 1.0) between their question and your FAQs. A score of 0.0 means an exact match.</p>
-            
-            <ul style="margin-left: 20px; margin-bottom: 15px;">
-              <li style="margin-bottom: 10px;"><strong>FAQ Accept Distance:</strong> This is the threshold for an "Instant Answer". If the AI finds an FAQ with a distance lower than this number (e.g., 0.35), it will instantly reply with your exact words without using any generative AI credits.</li>
-              <li><strong>LLM Candidate Distance:</strong> If the best FAQ is slightly outside the "Instant Answer" range (e.g., between 0.35 and 0.50), the system pulls all FAQs within this "Candidate" range and asks the Generative AI (Gemini) to read them and write a custom, conversational answer.</li>
-            </ul>
-
-            <div style="background: var(--surface-2); padding: 15px; border-left: 4px solid var(--brand); margin: 15px 0;">
-              <strong>Rule of Thumb:</strong>
-              <br>- If your bot says "I don't know" too often, <strong>increase</strong> the distances.
-              <br>- If your bot gives wrong or irrelevant answers, <strong>decrease</strong> the distances.
-            </div>
-          </div>
-        </section>
       </section>
     </main>
+
+    <datalist id="siteOptions"></datalist>
+    <datalist id="groupOptions"></datalist>
+
+    <dialog id="siteModal" class="modal">
+      <form id="siteForm" class="form-grid modal-body">
+        <input id="siteId" type="hidden" />
+        <div class="modal-title span-all">
+          <h2 id="siteModalTitle">Create Site</h2>
+          <button id="closeSiteModalBtn" type="button" class="ghost">Close</button>
+        </div>
+        <input id="siteName" placeholder="Site name" required />
+        <input id="siteDomain" placeholder="Domain" />
+        <input id="siteHelpline" placeholder="Helpline number" required />
+        <input id="siteWelcome" placeholder="Welcome message" />
+        <input id="siteFallback" placeholder="Fallback message" />
+        <input id="siteAcceptDistance" type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
+        <input id="siteCandidateDistance" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
+        <input id="siteAllowedOrigins" placeholder="Allowed origins, comma separated" />
+        <div class="span-all branding-row">
+          <label>Color <input id="sitePrimaryColor" type="color" value="#22c55e" /></label>
+          <input id="siteBotName" placeholder="Bot display name" />
+          <input id="siteBotAvatar" placeholder="Bot avatar URL" />
+          <input id="siteLauncherIcon" placeholder="Icon" />
+        </div>
+        <label class="checkbox-row"><input id="siteActive" type="checkbox" checked /> Active</label>
+        <div class="form-actions span-all">
+          <button type="submit">Save Site</button>
+          <button id="repairSiteBtn" type="button" class="ghost">Repair Vectors</button>
+          <button id="deleteSiteBtn" type="button" class="danger">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="faqModal" class="modal">
+      <form id="faqForm" class="faq-form modal-body">
+        <div class="modal-title">
+          <h2 id="faqModalTitle">Add FAQ</h2>
+          <button id="closeFaqModalBtn" type="button" class="ghost">Close</button>
+        </div>
+        <input id="faqId" type="hidden" />
+        <input id="faqTargetSite" list="siteOptions" placeholder="Target site" />
+        <input id="faqTargetGroup" list="groupOptions" placeholder="Target group" />
+        <input id="faqQuestion" placeholder="Question" required />
+        <textarea id="faqAliases" placeholder="Aliases, one per line"></textarea>
+        <textarea id="faqAnswer" placeholder="Exact answer to return" required></textarea>
+        <div class="form-actions">
+          <button type="submit">Save FAQ</button>
+          <button id="clearFaqBtn" type="button">Clear</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="./app.js"></script>
   </body>

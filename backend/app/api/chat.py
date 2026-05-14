@@ -47,7 +47,7 @@ def check_rate_limit(request: Request, limit: int = 20, window: int = 60):
 
 def verify_site_origin(request: Request, site_id: str, repo: Repository):
     site = repo.get_site(site_id)
-    if not site or not site.active:
+    if not site or not site.active or site.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Site not found.")
 
     if settings.env == "development":

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from datetime import timedelta
+
 from fastapi import BackgroundTasks
 
 from app.repositories.base import Repository
@@ -28,7 +30,13 @@ class FaqService:
         self.embedder = embedder
 
     def create_site(self, payload: SiteCreate) -> SiteRecord:
-        site_id = payload.id or slugify(payload.domain or payload.name, "site")
+        base_id = slugify(payload.domain or payload.name, "site")
+        site_id = payload.id or base_id
+        if not payload.id:
+            suffix = 2
+            while self.repository.get_site(site_id):
+                site_id = f"{base_id}-{suffix}"
+                suffix += 1
         data = model_to_dict(payload)
         data.pop("id", None)
         site = SiteRecord(id=site_id, **data)
@@ -39,6 +47,21 @@ class FaqService:
         if not site:
             return None
         updated = SiteRecord(**merge_update(site, payload))
+        return self.repository.upsert_site(updated)
+
+    def soft_delete_site(self, site_id: str) -> SiteRecord | None:
+        site = self.repository.get_site(site_id)
+        if not site:
+            return None
+        deleted_at = utc_now()
+        updated = site.model_copy(
+            update={
+                "active": False,
+                "deleted_at": deleted_at,
+                "purge_after": deleted_at + timedelta(days=7),
+                "updated_at": deleted_at,
+            }
+        )
         return self.repository.upsert_site(updated)
 
     def create_group(self, payload: SiteGroupCreate, background_tasks: BackgroundTasks | None = None) -> SiteGroupRecord:
@@ -95,9 +118,11 @@ class FaqService:
         self.repository.delete_faq(faq_id)
 
     def resolve_target_site_ids(self, faq: FaqRecord) -> list[str]:
-        site_ids = set(faq.site_ids)
-        for group_id in faq.group_ids:
-            group = self.repository.get_group(group_id)
+        site_ids = set()
+        if faq.site_id:
+            site_ids.add(faq.site_id)
+        if faq.group_id:
+            group = self.repository.get_group(faq.group_id)
             if group and group.active:
                 site_ids.update(group.site_ids)
         return sorted(site_ids)

@@ -5,12 +5,22 @@ from typing import Any
 
 import firebase_admin
 from firebase_admin import auth
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 
 from app.core.config import settings
 
 if not firebase_admin._apps:
-    firebase_admin.initialize_app()
+    import os
+    from firebase_admin import credentials
+    key_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "firebase-key.json")
+    )
+    if os.path.exists(key_path):
+        cred = credentials.Certificate(key_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        # Fallback: rely on GOOGLE_APPLICATION_CREDENTIALS env var
+        firebase_admin.initialize_app()
 
 
 @dataclass(frozen=True)
@@ -56,31 +66,50 @@ def require_site_access(principal: AdminPrincipal, site_id: str) -> None:
 
 async def require_admin(
     authorization: str | None = Header(default=None),
-    x_admin_api_key: str | None = Header(default=None),
 ) -> AdminPrincipal:
-    token = x_admin_api_key
-    if authorization and authorization.lower().startswith("bearer "):
-        token = authorization.split(" ", 1)[1].strip()
-
-    if not token:
-        if settings.env == "development" and not settings.admin_api_key:
-            return AdminPrincipal(uid="dev_user", site_ids=("*",))
+    """Authentication: Verify token exists and is valid."""
+    if not authorization:
+        print("DEBUG AUTH: Missing Authorization header")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authentication token.",
         )
-
-    if settings.admin_api_key and token == settings.admin_api_key:
-        return AdminPrincipal(uid="api_key_user", site_ids=("*",))
-
-    try:
-        decoded_token = auth.verify_id_token(token)
-        principal = _principal_from_claims(decoded_token)
-        if not principal.uid:
-            raise ValueError("Token does not include a uid.")
-        return principal
-    except Exception as exc:
+    
+    if not authorization.lower().startswith("bearer "):
+        print(f"DEBUG AUTH: Malformed header: {authorization[:20]}...")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication token: {str(exc)}",
+            detail="Malformed authentication token.",
+        )
+
+    token = authorization.split(" ", 1)[1].strip()
+
+    try:
+        # Verify the token
+        decoded_token = auth.verify_id_token(token)
+        principal = _principal_from_claims(decoded_token)
+        
+        if not principal.uid:
+            print("DEBUG AUTH: Token verified but no UID found")
+            raise ValueError("Token does not include a uid.")
+            
+        return principal
+    except Exception as exc:
+        detail = str(exc)
+        print(f"DEBUG AUTH: Verification failed: {detail}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid session: {detail}",
         ) from exc
+
+
+async def require_super_admin(
+    principal: AdminPrincipal = Depends(require_admin),
+) -> AdminPrincipal:
+    """Authorization: Ensure the user is a platform-wide Super Admin."""
+    if not principal.can_access_all_sites:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: Super Admin privileges required.",
+        )
+    return principal
