@@ -46,8 +46,11 @@ class MemoryRepository(Repository):
             if vector.active
         }
 
-    def list_sites(self) -> list[SiteRecord]:
-        return sorted(self.sites.values(), key=lambda item: item.name.lower())
+    def list_sites(self, include_deleted: bool = False) -> list[SiteRecord]:
+        sites = list(self.sites.values())
+        if not include_deleted:
+            sites = [site for site in sites if site.deleted_at is None]
+        return sorted(sites, key=lambda item: item.name.lower())
 
     def get_site(self, site_id: str) -> SiteRecord | None:
         return self.sites.get(site_id)
@@ -91,9 +94,9 @@ class MemoryRepository(Repository):
                 for vector in self.vectors.values()
                 if vector.site_id == site_id and vector.active
             }
-            faqs = [faq for faq in faqs if faq.id in faq_ids or site_id in faq.site_ids]
+            faqs = [faq for faq in faqs if faq.id in faq_ids or faq.site_id == site_id]
         if group_id:
-            faqs = [faq for faq in faqs if group_id in faq.group_ids]
+            faqs = [faq for faq in faqs if faq.group_id == group_id]
         return sorted(faqs, key=lambda item: item.updated_at, reverse=True)
 
     def get_faq(self, faq_id: str) -> FaqRecord | None:
@@ -165,6 +168,7 @@ class MemoryRepository(Repository):
         site_id: str | None = None,
         response_type: ResponseType | None = None,
         review_status: ReviewStatus | None = None,
+        fallback_only: bool = False,
         limit: int = 200,
     ) -> list[ChatLogRecord]:
         logs = list(self.logs.values())
@@ -174,6 +178,8 @@ class MemoryRepository(Repository):
             logs = [log for log in logs if log.response_type == response_type]
         if review_status:
             logs = [log for log in logs if log.review_status == review_status]
+        if fallback_only:
+            logs = [log for log in logs if log.response_type != ResponseType.faq_hit]
         return sorted(logs, key=lambda item: item.timestamp, reverse=True)[:limit]
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:

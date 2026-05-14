@@ -84,7 +84,7 @@ class GeminiLlmService(LlmService):
 
     @property
     def model_id(self) -> str:
-        model = (self.model_name or "gemini-2.5-flash").strip()
+        model = (self.model_name or "gemini-1.5-flash").strip()
         if model.startswith("models/"):
             model = model.removeprefix("models/")
         return model
@@ -108,9 +108,22 @@ class GeminiLlmService(LlmService):
         if isinstance(exc, httpx.HTTPStatusError):
             status = exc.response.status_code
             try:
+                # For streaming responses, we might need to read the content first
+                # but since this is sync-ish logic called from potentially async contexts,
+                # we check if it's already read.
+                if not exc.response.is_closed:
+                     import asyncio
+                     try:
+                         # Attempt to read if we are in a context where we can
+                         # If not, just skip the body
+                         pass 
+                     except Exception:
+                         pass
+                
                 body = exc.response.text[:300].replace(self.api_key, "[redacted]")
             except Exception:
-                body = ""
+                # If we can't read the body (e.g. streaming response not read), just skip it
+                body = "(Response body unavailable)"
             return RuntimeError(
                 f"Gemini {operation} request failed with HTTP {status} for model "
                 f"{self.model_id}. Response: {body}"

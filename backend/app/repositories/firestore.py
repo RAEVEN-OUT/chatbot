@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
 from app.core.config import settings
+from app.core.config import ROOT_DIR
 from app.repositories.base import Repository
 from app.repositories.cache import TTLCache
 from app.repositories.memory import cosine_distance
@@ -16,11 +18,20 @@ from app.schemas.models import (
     ResponseType,
     SiteRecord,
     SiteGroupRecord,
+<<<<<<< HEAD
+=======
+    ReviewStatus,
+    BackgroundTaskRecord,
+>>>>>>> dev
 )
 
 
 class FirestoreRepository(Repository):
+<<<<<<< HEAD
     """Firestore-backed repository with grouping support."""
+=======
+    """Simplified Firestore repository with grouping."""
+>>>>>>> dev
 
     def __init__(self, project: str = "", database: str = "(default)") -> None:
         try:
@@ -28,10 +39,23 @@ class FirestoreRepository(Repository):
         except ImportError as exc:
             raise RuntimeError("Install google-cloud-firestore to use Firestore.") from exc
 
+        key_path = ROOT_DIR / "firebase-key.json"
+        client_kwargs = {"database": database}
         if project:
+<<<<<<< HEAD
             self.db = firestore.Client(project=project, database=database)
         else:
             self.db = firestore.Client(database=database)
+=======
+            client_kwargs["project"] = project
+        if key_path.exists():
+            from google.oauth2 import service_account
+
+            client_kwargs["credentials"] = service_account.Credentials.from_service_account_file(
+                str(key_path)
+            )
+        self.db = firestore.Client(**client_kwargs)
+>>>>>>> dev
             
         self._site_cache: TTLCache[str, SiteRecord] = TTLCache(
             ttl_seconds=settings.repository_cache_ttl_seconds,
@@ -106,11 +130,14 @@ class FirestoreRepository(Repository):
             lambda key: isinstance(key, tuple) and key[0] in site_ids
         )
 
-    def list_sites(self) -> list[SiteRecord]:
-        return [
-            SiteRecord(**self._from_firestore(doc.to_dict()))
+    def list_sites(self, include_deleted: bool = False) -> list[SiteRecord]:
+        sites = [
+            SiteRecord(**self._from_firestore({**doc.to_dict(), "id": doc.id}))
             for doc in self._collection("sites").stream()
         ]
+        if not include_deleted:
+            sites = [site for site in sites if site.deleted_at is None]
+        return sites
 
     def get_site(self, site_id: str) -> SiteRecord | None:
         cached = self._site_cache.get(site_id)
@@ -133,7 +160,7 @@ class FirestoreRepository(Repository):
 
     def list_groups(self) -> list[SiteGroupRecord]:
         return [
-            SiteGroupRecord(**self._from_firestore(doc.to_dict()))
+            SiteGroupRecord(**self._from_firestore({**doc.to_dict(), "id": doc.id}))
             for doc in self._collection("site_groups").stream()
         ]
 
@@ -147,37 +174,60 @@ class FirestoreRepository(Repository):
     def delete_group(self, group_id: str) -> None:
         self._collection("site_groups").document(group_id).delete()
 
+<<<<<<< HEAD
     def list_faqs(
         self,
         site_id: str | None = None,
         group_id: str | None = None,
         include_inactive: bool = False
     ) -> list[FaqRecord]:
+=======
+    def list_faqs(self, site_id: str | None = None, group_id: str | None = None, include_inactive: bool = False) -> list[FaqRecord]:
+>>>>>>> dev
         if site_id:
             # We must find FAQs that belong directly to the site OR to a group that contains the site
             faq_by_id: dict[str, FaqRecord] = {}
             
+<<<<<<< HEAD
             # Direct site FAQs
             direct_query = self._collection("faq_sources").where("site_ids", "array_contains", site_id)
+=======
+            # 1. Direct site-specific FAQs
+            site_query = self._collection("faq_sources").where("site_id", "==", site_id)
+>>>>>>> dev
             if not include_inactive:
-                direct_query = direct_query.where("active", "==", True)
-            for doc in direct_query.stream():
+                site_query = site_query.where("active", "==", True)
+            for doc in site_query.stream():
                 faq = self._faq_from_snapshot(doc)
                 faq_by_id[faq.id] = faq
             
+<<<<<<< HEAD
             # Group FAQs
             groups = self.list_groups()
             target_group_ids = [g.id for g in groups if site_id in g.site_ids]
             for g_id in target_group_ids:
                 g_query = self._collection("faq_sources").where("group_ids", "array_contains", g_id)
+=======
+            # 2. Inherited group-level FAQs for this site
+            groups = self.list_groups()
+            target_group_ids = [g.id for g in groups if site_id in g.site_ids]
+            for g_id in target_group_ids:
+                g_query = self._collection("faq_sources").where("group_id", "==", g_id)
+>>>>>>> dev
                 if not include_inactive:
                     g_query = g_query.where("active", "==", True)
                 for doc in g_query.stream():
                     faq = self._faq_from_snapshot(doc)
                     faq_by_id[faq.id] = faq
+<<<<<<< HEAD
                     
+=======
+            
+>>>>>>> dev
             docs = list(faq_by_id.values())
+            # If group_id filter also provided, further filter in memory
             if group_id:
+<<<<<<< HEAD
                 docs = [f for f in docs if group_id in f.group_ids]
             return sorted(docs, key=lambda x: x.updated_at, reverse=True)
 
@@ -188,6 +238,18 @@ class FirestoreRepository(Repository):
         if not include_inactive:
             query = query.where("active", "==", True)
         
+=======
+                docs = [f for f in docs if f.group_id == group_id]
+            return sorted(docs, key=lambda x: x.updated_at, reverse=True)
+
+        # Global or Group-specific query
+        query = self._collection("faq_sources")
+        if group_id:
+            query = query.where("group_id", "==", group_id)
+        if not include_inactive:
+            query = query.where("active", "==", True)
+            
+>>>>>>> dev
         docs = [self._faq_from_snapshot(doc) for doc in query.stream()]
         return sorted(docs, key=lambda x: x.updated_at, reverse=True)
 
@@ -314,15 +376,53 @@ class FirestoreRepository(Repository):
     def get_log(self, log_id: str) -> ChatLogRecord | None:
         return self._load("chat_logs", log_id, ChatLogRecord)
 
+<<<<<<< HEAD
     def list_logs(self, site_id: str | None = None, response_type: ResponseType | None = None, limit: int = 200) -> list[ChatLogRecord]:
+=======
+    def list_logs(
+        self,
+        site_id: str | None = None,
+        response_type: ResponseType | None = None,
+        review_status: ReviewStatus | None = None,
+        fallback_only: bool = False,
+        limit: int = 200
+    ) -> list[ChatLogRecord]:
+>>>>>>> dev
         query = self._collection("chat_logs")
         if site_id:
             query = query.where("site_id", "==", site_id)
         if response_type:
             query = query.where("response_type", "==", response_type.value)
+<<<<<<< HEAD
         query = query.limit(max(1, min(limit, 1000)))
         logs = [ChatLogRecord(**self._from_firestore(doc.to_dict())) for doc in query.stream()]
         return sorted(logs, key=lambda item: item.timestamp, reverse=True)
+=======
+        if review_status:
+            query = query.where("review_status", "==", review_status.value)
+        
+        # We fetch a bit more than the limit if filtering in memory
+        fetch_limit = limit * 2 if fallback_only else limit
+        query = query.limit(max(1, min(fetch_limit, 1000)))
+        
+        logs = []
+        try:
+            for doc in query.stream():
+                try:
+                    data = doc.to_dict()
+                    data["id"] = doc.id
+                    log = ChatLogRecord(**self._from_firestore(data))
+                    if fallback_only and log.response_type == ResponseType.faq_hit:
+                        continue
+                    logs.append(log)
+                except Exception:
+                    continue
+        except Exception as e:
+            # This handles stream failures like missing indexes
+            print(f"Error streaming logs: {e}")
+            
+        return sorted(logs, key=lambda item: item.timestamp, reverse=True)[:limit]
+>>>>>>> dev
 
     def update_log(self, log: ChatLogRecord) -> ChatLogRecord:
         self._save("chat_logs", log.id, log)

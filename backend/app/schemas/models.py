@@ -18,6 +18,34 @@ class ResponseType(str, Enum):
     error = "error"
 
 
+<<<<<<< HEAD
+=======
+class ReviewStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class BackgroundTaskStatus(str, Enum):
+    pending = "pending"
+    processing = "processing"
+    completed = "completed"
+    failed = "failed"
+
+
+class BackgroundTaskRecord(BaseModel):
+    id: str
+    site_id: str
+    type: str
+    status: BackgroundTaskStatus = BackgroundTaskStatus.pending
+    progress: int = 0
+    message: str = ""
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
+>>>>>>> dev
 class SiteBase(BaseModel):
     name: str
     domain: str = ""
@@ -29,10 +57,12 @@ class SiteBase(BaseModel):
     llm_candidate_distance: float = 0.55
     active: bool = True
     allowed_origins: list[str] = Field(default_factory=list)
-    primary_color: str = "#22c55e"
+    primary_color: str = "#126c57"
     bot_name: str = "Support Bot"
     bot_avatar_url: str = ""
     launcher_icon: str = "?"
+    deleted_at: datetime | None = None
+    purge_after: datetime | None = None
 
 
 class SiteCreate(SiteBase):
@@ -54,6 +84,8 @@ class SiteUpdate(BaseModel):
     bot_name: str | None = None
     bot_avatar_url: str | None = None
     launcher_icon: str | None = None
+    deleted_at: datetime | None = None
+    purge_after: datetime | None = None
 
 
 class SiteRecord(SiteBase):
@@ -90,8 +122,13 @@ class FaqBase(BaseModel):
     question: str
     answer: str
     aliases: list[str] = Field(default_factory=list)
+<<<<<<< HEAD
     site_ids: list[str] = Field(default_factory=list)
     group_ids: list[str] = Field(default_factory=list)
+=======
+    site_id: str = ""
+    group_id: str = ""
+>>>>>>> dev
     active: bool = True
 
 
@@ -103,8 +140,13 @@ class FaqUpdate(BaseModel):
     question: str | None = None
     answer: str | None = None
     aliases: list[str] | None = None
+<<<<<<< HEAD
     site_ids: list[str] | None = None
     group_ids: list[str] | None = None
+=======
+    site_id: str | None = None
+    group_id: str | None = None
+>>>>>>> dev
     active: bool | None = None
 
 
@@ -181,3 +223,10 @@ class AdminUserCreate(BaseModel):
     email: str
     password: str
     site_ids: list[str] = Field(default_factory=list)
+
+
+class SiteOwnerRegistration(BaseModel):
+    email: str
+    password: str
+    site: SiteCreate
+

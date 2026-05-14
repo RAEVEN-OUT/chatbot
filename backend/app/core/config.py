@@ -15,6 +15,13 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 if load_dotenv:
     load_dotenv(ROOT_DIR / ".env")
 
+credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+if credentials_path:
+    credentials_path = credentials_path.strip().strip('"').strip("'")
+    if credentials_path and not Path(credentials_path).is_absolute():
+        absolute_credentials_path = ROOT_DIR / credentials_path
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(absolute_credentials_path)
+
 
 def _get_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -49,8 +56,8 @@ class Settings:
     google_cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
     firestore_database: str = os.getenv("FIRESTORE_DATABASE", "(default)")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
-    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
-    gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
+    gemini_embedding_model: str = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    gemini_chat_model: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-1.5-flash")
     allowed_origins: list[str] = None  # type: ignore[assignment]
     collect_all_chat_logs: bool = _get_bool("COLLECT_ALL_CHAT_LOGS", True)
     repository_cache_ttl_seconds: int = _get_int("REPOSITORY_CACHE_TTL_SECONDS", 60)
