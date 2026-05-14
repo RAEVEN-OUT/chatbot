@@ -7,15 +7,19 @@ import firebase_admin
 from firebase_admin import auth, credentials
 from fastapi import Depends, Header, HTTPException, status
 
-from app.core.config import firebase_credentials_path
+from app.core.config import firebase_credentials_info, firebase_credentials_path
 
 
 if not firebase_admin._apps:
-    key_path = firebase_credentials_path()
-    if key_path.exists():
-        firebase_admin.initialize_app(credentials.Certificate(str(key_path)))
+    credential_info = firebase_credentials_info()
+    if credential_info:
+        firebase_admin.initialize_app(credentials.Certificate(credential_info))
     else:
-        firebase_admin.initialize_app()
+        key_path = firebase_credentials_path()
+        if key_path.exists():
+            firebase_admin.initialize_app(credentials.Certificate(str(key_path)))
+        else:
+            firebase_admin.initialize_app()
 
 
 @dataclass(frozen=True)

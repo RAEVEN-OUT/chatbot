@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import admin, chat, handoff
-from app.core.config import ROOT_DIR, settings
+from app.core.config import ROOT_DIR, firebase_credentials_status, settings
 
 
 app = FastAPI(title=settings.app_name)
@@ -61,4 +61,5 @@ def health():
         "ok": True,
         "storageBackend": settings.storage_backend,
         "llmEnabled": bool(settings.gemini_api_key),
+        "firebaseCredentials": firebase_credentials_status(),
     }
