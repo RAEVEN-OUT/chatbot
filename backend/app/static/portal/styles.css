@@ -578,6 +578,99 @@ label {
   border-radius: 10px;
 }
 
+/* Logs Premium Layout */
+.log-row {
+  display: flex;
+  gap: 20px;
+  padding: 24px 32px;
+  background: white;
+  border-bottom: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.log-row:hover { background: #fbfcfd; }
+.log-row:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
+
+.log-status-col {
+  padding-top: 4px;
+}
+
+.status-indicator {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.status-indicator::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.1;
+}
+
+.status-indicator.status-hit { color: var(--success); background: var(--success); }
+.status-indicator.status-fallback { color: var(--primary); background: var(--primary); }
+.status-indicator.status-helpline { color: var(--error); background: var(--error); }
+
+.log-body-col { flex: 1; min-width: 0; }
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.log-title { display: flex; align-items: center; gap: 12px; }
+.log-question { font-size: 15px; font-weight: 700; color: var(--text-main); }
+
+.status-pill {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-pill.status-hit { background: #ecfdf5; color: #065f46; border: 1px solid #d1fae5; }
+.status-pill.status-fallback { background: #eff6ff; color: #1e40af; border: 1px solid #dbeafe; }
+.status-pill.status-helpline { background: #fef2f2; color: #991b1b; border: 1px solid #fee2e2; }
+
+.log-meta { display: flex; gap: 16px; align-items: center; }
+
+.log-content { margin-bottom: 16px; }
+.log-answer { font-size: 14px; color: var(--text-body); line-height: 1.6; max-width: 900px; }
+
+.log-footer { display: flex; gap: 16px; }
+
+/* Date Filter Special */
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: white;
+  border: 1px solid var(--border-strong);
+  padding: 4px 12px;
+  border-radius: 8px;
+}
+
+.filter-group i { color: var(--text-muted); width: 14px; height: 14px; }
+.filter-group select, .filter-group input {
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 600;
+  width: auto;
+}
+
+.filter-group select:focus, .filter-group input:focus { box-shadow: none; transform: none; }
+
 /* Settings */
 .settings-grid {
   display: grid;
@@ -685,3 +778,372 @@ label {
   .stats-grid { grid-template-columns: 1fr; }
   .modal-form .input-grid { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   FAQ Section Redesign (Isolated)
+   ========================================================================== */
+
+#faqs {
+  --faq-primary: #1C2340;
+  --faq-secondary: #2E3A66;
+  --faq-accent: #5B7FFF;
+  --faq-bg: #F5F7FC;
+  --faq-card: #FFFFFF;
+  --faq-border: #E2E8F0;
+  --faq-text-main: #111827;
+  --faq-text-muted: #6B7280;
+  
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+#faqs .faq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+#faqs .faq-row {
+  background: var(--faq-card);
+  border: 1px solid var(--faq-border);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  transition: all 0.3s ease;
+  display: block;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+#faqs .faq-row:hover {
+  border-color: var(--faq-accent);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.05);
+}
+
+#faqs .faq-card-header {
+  padding: 24px 24px 12px 24px;
+}
+
+#faqs .faq-content-left {
+  flex: 1;
+  min-width: 0;
+}
+
+#faqs .faq-question {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--faq-primary);
+  margin-bottom: 8px;
+  display: block;
+}
+
+#faqs .faq-meta {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+#faqs .meta-item {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faq-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+#faqs .meta-item i { width: 12px; height: 12px; }
+
+/* Card Body */
+#faqs .faq-card-body {
+  padding: 0 24px 24px 24px;
+}
+
+#faqs .faq-answer {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--faq-text-main);
+  white-space: pre-wrap;
+  margin-bottom: 16px;
+}
+
+#faqs .faq-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#faqs .alias-tag {
+  background: #eff6ff;
+  color: #1e40af;
+  padding: 3px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #dbeafe;
+}
+
+/* Row Actions */
+#faqs .faq-actions-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--faq-border);
+}
+
+#faqs .action-btn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: white;
+  border: 1px solid var(--faq-border);
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--faq-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#faqs .action-btn-pill i { width: 14px; height: 14px; }
+
+#faqs .action-btn-pill:hover {
+  background: var(--faq-bg);
+  border-color: var(--faq-accent);
+  color: var(--faq-accent);
+}
+
+#faqs .action-btn-pill.delete:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #ef4444;
+}
+
+/* ==========================================================================
+   End FAQ Section Redesign
+   ========================================================================== */
+
+/* ==========================================================================
+   Bot Tester Redesign (Isolated)
+   ========================================================================== */
+
+#tester {
+  --tester-primary: #1C2340;
+  --tester-secondary: #2E3A66;
+  --tester-accent: #5B7FFF;
+  --tester-bg: #F5F7FC;
+  --tester-card: #FFFFFF;
+  --tester-border: #E2E8F0;
+  --tester-text-main: #111827;
+  --tester-text-muted: #6B7280;
+  
+  height: calc(100vh - 180px);
+  display: none;
+}
+
+#tester.active-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+#tester .tester-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--tester-bg);
+  border-radius: 16px;
+  border: 1px solid var(--tester-border);
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+#tester .tester-view-header {
+  padding: 16px 24px;
+  background: var(--tester-card);
+  border-bottom: 1px solid var(--tester-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#tester .bot-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#tester .bot-avatar-circle {
+  width: 36px;
+  height: 36px;
+  background: var(--tester-primary);
+  color: white;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#tester .bot-info-text h4 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--tester-text-main);
+}
+
+#tester .bot-status-tag {
+  font-size: 10px;
+  font-weight: 600;
+  color: #10b981;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#tester .bot-status-tag::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+}
+
+#tester .tester-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Chat Area */
+#tester #testMessages {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--tester-bg);
+}
+
+#tester .message-wrapper {
+  display: flex;
+  width: 100%;
+  animation: messageSlideIn 0.3s ease-out;
+}
+
+@keyframes messageSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#tester .message-wrapper.user { justify-content: flex-end; }
+#tester .message-wrapper.bot { justify-content: flex-start; }
+
+#tester .message-bubble {
+  max-width: 80%;
+  padding: 10px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  border-radius: 16px;
+  position: relative;
+}
+
+#tester .message-wrapper.user .message-bubble {
+  background: var(--tester-accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+#tester .message-wrapper.bot .message-bubble {
+  background: var(--tester-card);
+  color: var(--tester-text-main);
+  border: 1px solid var(--tester-border);
+  border-bottom-left-radius: 4px;
+}
+
+/* Input Area */
+#tester .tester-input-area {
+  padding: 20px 24px;
+  background: var(--tester-card);
+  border-top: 1px solid var(--tester-border);
+}
+
+#tester .input-box-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--tester-bg);
+  border: 1px solid var(--tester-border);
+  border-radius: 12px;
+  padding: 2px 6px;
+  transition: all 0.3s ease;
+}
+
+#tester .input-box-container:focus-within {
+  border-color: var(--tester-accent);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(91, 127, 255, 0.1);
+}
+
+#tester #testQuestion {
+  flex: 1;
+  border: none !important;
+  background: transparent !important;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--tester-text-main);
+  box-shadow: none !important;
+}
+
+#tester .chat-send-btn {
+  width: 36px;
+  height: 36px;
+  background: var(--tester-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#tester .chat-send-btn:hover { background: var(--tester-accent); }
+
+/* Lead Form */
+#tester .lead-form-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+#tester .lead-card {
+  background: white;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid var(--tester-border);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+  width: 100%;
+  max-width: 340px;
+}
+
+#tester .lead-card h3 { margin-bottom: 20px; font-size: 18px; }
+#tester .lead-card .input-group { margin-bottom: 12px; text-align: left; }
+#tester .lead-card button { width: 100%; margin-top: 8px; }
+
+/* ==========================================================================
+   End Bot Tester Redesign
+   ========================================================================== */

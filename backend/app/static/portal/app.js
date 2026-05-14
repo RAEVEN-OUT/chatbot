@@ -142,7 +142,7 @@ function selectSite(siteId) {
   state.sessionId = "";
   syncSiteChooser();
   $("testMessages").innerHTML = "";
-  $("leadForm").classList.remove("hidden");
+  $("leadFormWrap").style.display = "flex";
   $("testForm").classList.add("hidden");
   refreshFaqs();
   refreshLogs();
@@ -170,31 +170,36 @@ function renderFaqs() {
   }
 
   $("faqsList").innerHTML = faqs.map((faq) => `
-    <div class="faq-row animate-up">
-      <div class="faq-content">
-        <div class="faq-header">
-          <h3 class="faq-question">${esc(faq.question)}</h3>
-          <div class="faq-meta">
-            <span class="meta-item"><i data-lucide="clock"></i> ${recentStamp(faq)}</span>
-            ${faq.group_id ? `<span class="meta-item"><i data-lucide="layers"></i> Group: ${esc(state.groups.find(g => g.id === faq.group_id)?.name || 'Unknown')}</span>` : ''}
+    <div class="faq-row animate-up" id="faq-${faq.id}">
+      <div class="faq-card-content">
+        <div class="faq-card-header">
+          <div class="faq-content-left">
+            <span class="faq-question">${esc(faq.question)}</span>
+            <div class="faq-meta">
+              <span class="meta-item"><i data-lucide="clock"></i> ${recentStamp(faq)}</span>
+              ${faq.group_id ? `<span class="meta-item"><i data-lucide="layers"></i> Group: ${esc(state.groups.find(g => g.id === faq.group_id)?.name || 'Unknown')}</span>` : ''}
+            </div>
           </div>
         </div>
-        <div class="faq-body">
+        <div class="faq-card-body">
           <p class="faq-answer">${esc(faq.answer)}</p>
           ${faq.aliases?.length ? `
             <div class="faq-tags">
               ${faq.aliases.map(a => `<span class="alias-tag">${esc(a)}</span>`).join('')}
             </div>
           ` : ''}
+          
+          <div class="faq-actions-row">
+            <button class="action-btn-pill" onclick="editFaq('${esc(faq.id)}')" title="Edit Entry">
+              <i data-lucide="edit-3"></i>
+              <span>Edit</span>
+            </button>
+            <button class="action-btn-pill delete" onclick="deleteFaq('${esc(faq.id)}')" title="Delete Entry">
+              <i data-lucide="trash-2"></i>
+              <span>Delete</span>
+            </button>
+          </div>
         </div>
-      </div>
-      <div class="faq-actions">
-        <button class="action-btn" onclick="editFaq('${esc(faq.id)}')" title="Edit entry">
-          <i data-lucide="edit-3"></i>
-        </button>
-        <button class="action-btn delete" onclick="deleteFaq('${esc(faq.id)}')" title="Delete entry">
-          <i data-lucide="trash-2"></i>
-        </button>
       </div>
     </div>`).join("");
     
@@ -213,18 +218,43 @@ async function refreshLogs() {
 function renderLogs() {
   const query = $("logSearch").value.trim().toLowerCase();
   const logs = state.logs.filter((log) => !query || [log.question, log.answer, log.email, log.phone, log.user_name].some((value) => String(value || "").toLowerCase().includes(query)));
-  $("logsList").innerHTML = logs.length ? logs.map((log) => `
-    <article class="faq-item">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <h3>${esc(log.question)}</h3>
-        <span class="status-badge status-${log.response_type === 'faq_hit' ? 'hit' : log.response_type === 'llm_fallback' ? 'fallback' : 'helpline'}">
-          ${esc(log.response_type.replaceAll("_", " "))}
-        </span>
+  
+  if (!logs.length) {
+    $("logsList").innerHTML = `<div class="empty-state"><i data-lucide="list-filter"></i><p>No activity logs found for this period.</p></div>`;
+    lucide.createIcons();
+    return;
+  }
+
+  $("logsList").innerHTML = logs.map((log) => `
+    <div class="log-row animate-up">
+      <div class="log-status-col">
+        <span class="status-indicator status-${log.response_type === 'faq_hit' ? 'hit' : log.response_type === 'llm_fallback' ? 'fallback' : 'helpline'}"></span>
       </div>
-      <div class="faq-answer">${esc(log.answer)}</div>
-      <p class="muted" style="font-size: 11px; margin-top: 8px;">${formatDate(log.timestamp)} | User: ${esc(log.user_name || log.email || 'Anonymous')}</p>
-      <div class="actions"><button class="secondary-btn btn-sm" onclick="convertLog('${esc(log.id)}')">Add as FAQ</button></div>
-    </article>`).join("") : `<p class="muted">No logs yet.</p>`;
+      <div class="log-body-col">
+        <div class="log-header">
+          <div class="log-title">
+            <h3 class="log-question">${esc(log.question)}</h3>
+            <span class="status-pill status-${log.response_type === 'faq_hit' ? 'hit' : log.response_type === 'llm_fallback' ? 'fallback' : 'helpline'}">
+              ${esc(log.response_type.replaceAll("_", " "))}
+            </span>
+          </div>
+          <div class="log-meta">
+            <span class="meta-item"><i data-lucide="user"></i> ${esc(log.user_name || log.email || 'Anonymous')}</span>
+            <span class="meta-item"><i data-lucide="clock"></i> ${formatDate(log.timestamp)}</span>
+            <button class="secondary-btn btn-sm" onclick="convertLog('${esc(log.id)}')" style="margin-left: 8px;">
+              <i data-lucide="plus-circle"></i>
+              <span>FAQ</span>
+            </button>
+          </div>
+        </div>
+        <div class="log-content">
+          <p class="log-answer">${esc(log.answer)}</p>
+        </div>
+      </div>
+    </div>`).join("");
+    
+  lucide.createIcons();
+  renderRecentActivity();
 }
 
 function renderRecentActivity() {
@@ -615,8 +645,9 @@ $("leadForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const session = await api("/api/chat/sessions", { method: "POST", body: JSON.stringify({ site_id: state.currentSiteId, name: $("testName").value, email: $("testEmail").value, phone: $("testPhone").value }) });
   state.sessionId = session.id;
-  addMessage("bot", `Session started for ${currentSite()?.name || state.currentSiteId}.`);
-  $("leadForm").classList.add("hidden");
+  $("testMessages").innerHTML = "";
+  addMessage("bot", `Hello! I'm the assistant for ${currentSite()?.name || state.currentSiteId}. How can I help you today?`);
+  $("leadFormWrap").style.display = "none";
   $("testForm").classList.remove("hidden");
 });
 
@@ -629,16 +660,20 @@ $("testForm").addEventListener("submit", async (e) => {
   const bot = addMessage("bot", "Thinking...");
   try {
     const response = await api("/api/chat/message", { method: "POST", body: JSON.stringify({ site_id: state.currentSiteId, session_id: state.sessionId, question }) });
-    bot.querySelector(".msg-text").textContent = response.answer;
+    bot.querySelector(".bubble-text").textContent = response.answer;
     refreshLogs();
-  } catch { bot.querySelector(".msg-text").textContent = "Sorry, something went wrong."; }
+  } catch { bot.querySelector(".bubble-text").textContent = "Sorry, something went wrong."; }
 });
 
 function addMessage(type, text) {
-  const node = document.createElement("div");
-  node.className = `message ${type}`;
-  node.innerHTML = `<span class="msg-text">${esc(text)}</span>`;
-  $("testMessages").appendChild(node);
+  const wrapper = document.createElement("div");
+  wrapper.className = `message-wrapper ${type}`;
+  wrapper.innerHTML = `
+    <div class="message-bubble">
+      <div class="bubble-text">${esc(text)}</div>
+    </div>
+  `;
+  $("testMessages").appendChild(wrapper);
   $("testMessages").scrollTop = $("testMessages").scrollHeight;
-  return node;
+  return wrapper;
 }

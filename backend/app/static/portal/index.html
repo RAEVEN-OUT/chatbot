@@ -49,10 +49,6 @@
             <p id="userEmail" class="email"></p>
             <p id="userRole" class="role">Owner</p>
           </div>
-          <button id="logoutBtn" class="logout-btn">
-            <i data-lucide="log-out"></i>
-            <span>Log Out</span>
-          </button>
         </div>
 
         <nav class="sidebar-nav">
@@ -79,6 +75,10 @@
           <button class="nav-item" data-tab="settings">
             <i data-lucide="settings"></i>
             <span>Site Settings</span>
+          </button>
+          <button id="logoutBtn" class="nav-item logout-nav-item" style="margin-top: 12px; color: #ef4444;">
+            <i data-lucide="log-out"></i>
+            <span>Log Out</span>
           </button>
         </nav>
 
@@ -243,25 +243,31 @@
 
           <!-- Logs Panel -->
           <div id="logs" class="panel">
-            <div class="toolbar">
-              <div class="search-box">
+            <div class="toolbar-primary">
+              <div class="search-field">
                 <i data-lucide="search"></i>
-                <input id="logSearch" placeholder="Search logs..." />
+                <input id="logSearch" placeholder="Search conversations..." />
               </div>
-              <select id="logTypeFilter">
-                <option value="">All types</option>
-                <option value="faq_hit">FAQ hit</option>
-                <option value="llm_fallback">LLM</option>
-                <option value="helpline">Helpline</option>
-              </select>
-              <select id="logDateFilter">
-                <option value="">All time</option>
-                <option value="1d">1 day</option>
-                <option value="7d">Last week</option>
-                <option value="30d">Last month</option>
-              </select>
+              <div class="filter-group">
+                <i data-lucide="filter"></i>
+                <select id="logTypeFilter">
+                  <option value="">All results</option>
+                  <option value="faq_hit">FAQ Hits</option>
+                  <option value="llm_fallback">AI Fallbacks</option>
+                  <option value="helpline_escaped">Helpline</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <i data-lucide="calendar"></i>
+                <select id="logDateFilter">
+                  <option value="">All time</option>
+                  <option value="1d">Last 24 hours</option>
+                  <option value="7d">Last 7 days</option>
+                  <option value="30d">Last 30 days</option>
+                </select>
+              </div>
             </div>
-            <div id="logsList" class="log-list"></div>
+            <div id="logsList" class="faq-list"></div>
           </div>
 
           <!-- Groups Panel -->
@@ -295,25 +301,61 @@
           <!-- Tester Panel -->
           <div id="tester" class="panel">
             <div class="tester-container">
-              <div class="tester-header">
-                <h3>Bot Tester</h3>
-                <span id="testerSiteName" class="badge">No site selected</span>
-              </div>
-              <div id="testMessages" class="chat-window"></div>
-              <form id="leadForm" class="tester-lead-form">
-                <div class="input-row">
-                  <input id="testName" placeholder="Name" />
-                  <input id="testEmail" placeholder="Email" />
-                  <input id="testPhone" placeholder="Phone" />
+              <!-- Header -->
+              <div class="tester-view-header">
+                <div class="bot-profile">
+                  <div class="bot-avatar-circle">
+                    <i data-lucide="bot"></i>
+                  </div>
+                  <div class="bot-info-text">
+                    <h4 id="testerSiteName">Support Assistant</h4>
+                    <span class="bot-status-tag">Online & Ready</span>
+                  </div>
                 </div>
-                <button id="startSessionBtn" type="submit" class="primary-btn">Start Session</button>
-              </form>
-              <form id="testForm" class="tester-chat-form hidden">
-                <input id="testQuestion" placeholder="Ask a question..." autocomplete="off" />
-                <button id="testSendBtn" type="submit" class="send-btn">
-                  <i data-lucide="send"></i>
-                </button>
-              </form>
+                <div class="tester-actions">
+                  <button class="secondary-btn btn-sm" onclick="bootstrapPortal()">
+                    <i data-lucide="rotate-cw"></i>
+                    <span>Restart</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Chat Area -->
+              <div id="testMessages" class="chat-window"></div>
+
+              <!-- Lead Form Overlay -->
+              <div id="leadFormWrap" class="lead-form-overlay">
+                <div class="lead-card animate-up">
+                  <h3>Start Conversation</h3>
+                  <form id="leadForm">
+                    <div class="input-group">
+                      <label>Your Name</label>
+                      <input id="testName" placeholder="e.g. John Doe" required />
+                    </div>
+                    <div class="input-group">
+                      <label>Email Address</label>
+                      <input id="testEmail" type="email" placeholder="john@example.com" required />
+                    </div>
+                    <div class="input-group">
+                      <label>Phone (Optional)</label>
+                      <input id="testPhone" placeholder="+1..." />
+                    </div>
+                    <button type="submit" class="primary-btn">Begin Testing</button>
+                  </form>
+                </div>
+              </div>
+
+              <!-- Input Area -->
+              <div class="tester-input-area">
+                <form id="testForm" class="tester-chat-form hidden">
+                  <div class="input-box-container">
+                    <input id="testQuestion" placeholder="Type your message here..." autocomplete="off" />
+                    <button id="testSendBtn" type="submit" class="chat-send-btn">
+                      <i data-lucide="send"></i>
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           </div>
 
