@@ -5,79 +5,247 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Site Portal</title>
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
   </head>
   <body>
     <div id="loginOverlay" class="login-overlay active">
       <div class="login-card">
-        <h2>Site Portal</h2>
+        <div class="brand-logo">
+          <i data-lucide="globe"></i>
+          <span>Site Portal</span>
+        </div>
+        <h2>Welcome Back</h2>
+        <p class="muted">Sign in to manage your chatbots</p>
         <form id="loginForm">
-          <input type="email" id="loginEmail" placeholder="Email" required />
-          <input type="password" id="loginPassword" placeholder="Password" required />
-          <button type="submit">Sign In</button>
-          <button id="showRegisterBtn" type="button" class="ghost">Register Chatbot</button>
+          <div class="input-group">
+            <label for="loginEmail">Email Address</label>
+            <input type="email" id="loginEmail" placeholder="name@company.com" required />
+          </div>
+          <div class="input-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" id="loginPassword" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="primary-btn">Sign In</button>
+          <button id="showRegisterBtn" type="button" class="ghost-btn">Register Chatbot</button>
           <p id="loginError" class="error-text"></p>
         </form>
       </div>
     </div>
 
-    <header class="topbar">
-      <div>
-        <h1>Site Portal</h1>
-        <p id="statusText">Loading...</p>
-      </div>
-      <div class="topbar-right">
-        <span id="globalLoading" class="loading-spinner" style="display:none;">Processing...</span>
-        <input id="siteChooser" list="siteOptions" placeholder="Choose site" style="display:none; max-width:260px;" />
-        <span id="userEmail"></span>
-        <button id="logoutBtn" type="button" style="display:none;">Log Out</button>
-      </div>
-    </header>
-
-    <main class="layout" id="mainLayout" style="display:none;">
+    <div class="app-container" id="mainLayout" style="display:none;">
       <aside class="sidebar">
-        <button id="refreshBtn" type="button" class="ghost">Refresh</button>
-        <nav class="tabs" aria-label="Portal sections">
-          <button class="tab active" data-tab="analytics" type="button">Analytics</button>
-          <button class="tab" data-tab="faqs" type="button">FAQs</button>
-          <button class="tab" data-tab="logs" type="button">Logs</button>
-          <button class="tab" data-tab="groups" type="button">Groups</button>
-          <button class="tab" data-tab="tester" type="button">Tester</button>
-          <button class="tab" data-tab="settings" type="button">Site Settings</button>
+        <div class="sidebar-header">
+          <div class="brand">
+            <i data-lucide="globe"></i>
+            <span>Site Portal</span>
+          </div>
+          <div class="user-info">
+            <p id="userEmail" class="email"></p>
+            <p id="userRole" class="role">Owner</p>
+          </div>
+          <button id="logoutBtn" class="logout-btn">
+            <i data-lucide="log-out"></i>
+            <span>Log Out</span>
+          </button>
+        </div>
+
+        <nav class="sidebar-nav">
+          <button class="nav-item active" data-tab="analytics">
+            <i data-lucide="bar-chart-3"></i>
+            <span>Analytics</span>
+          </button>
+          <button class="nav-item" data-tab="faqs">
+            <i data-lucide="help-circle"></i>
+            <span>FAQs</span>
+          </button>
+          <button class="nav-item" data-tab="logs">
+            <i data-lucide="list-filter"></i>
+            <span>Logs</span>
+          </button>
+          <button class="nav-item" data-tab="groups" id="groupsTab">
+            <i data-lucide="layers"></i>
+            <span>Groups</span>
+          </button>
+          <button class="nav-item" data-tab="tester">
+            <i data-lucide="beaker"></i>
+            <span>Tester</span>
+          </button>
+          <button class="nav-item" data-tab="settings">
+            <i data-lucide="settings"></i>
+            <span>Site Settings</span>
+          </button>
         </nav>
+
+        <div class="sidebar-footer">
+          <div class="site-selector-wrap">
+            <input id="siteChooser" list="siteOptions" placeholder="Switch site..." />
+          </div>
+          <p id="statusText" class="status">Initializing...</p>
+          <div id="globalLoading" class="loading-indicator" style="display:none;">
+             <div class="spinner"></div>
+             <span>Processing...</span>
+          </div>
+        </div>
       </aside>
 
-      <section class="content">
-        <section id="analytics" class="panel active-panel">
-          <div class="panel-heading"><h2>Analytics</h2></div>
-          <div class="analytics-grid">
-            <div class="stat-card"><h3>Total Queries</h3><p id="statTotal">0</p></div>
-            <div class="stat-card"><h3>FAQ Hit Rate</h3><p id="statHitRate">0%</p><p id="statFaqHits" class="meta">0 hits</p></div>
-            <div class="stat-card"><h3>AI Fallback Rate</h3><p id="statLlmRate">0%</p><p id="statLlmHits" class="meta">0 fallbacks</p></div>
-            <div class="stat-card"><h3>Helpline Escaped</h3><p id="statHelplineRate">0%</p></div>
+      <main class="main-content">
+        <header class="content-header">
+          <div class="header-titles">
+            <h1 id="panelTitle">Analytics</h1>
+            <p id="panelSubtitle" class="muted">Overview of your chatbot performance and usage.</p>
           </div>
-          <div class="panel-heading"><h2>Top FAQs</h2></div>
-          <div id="topFaqsList" class="table"></div>
-        </section>
+          <div class="header-actions">
+            <button id="refreshBtn" class="secondary-btn">
+              <i data-lucide="rotate-cw"></i>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </header>
 
-        <section id="faqs" class="panel">
-          <div class="panel-heading">
-            <h2>FAQs</h2>
-            <div class="toolbar">
-              <input id="faqSearch" placeholder="Search FAQs" />
-              <input id="faqGroupChooser" list="groupOptions" placeholder="Choose group" />
-              <button id="createFaqBtn" type="button">Add FAQ</button>
+        <section class="content-panels">
+          <!-- Analytics Panel -->
+          <div id="analytics" class="panel active-panel">
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon purple"><i data-lucide="message-square"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-label">Total Queries</span>
+                    <h3 id="statTotal">0</h3>
+                  </div>
+                </div>
+                <div class="stat-footer">
+                  <span class="meta">All time</span>
+                  <div class="sparkline"><canvas id="sparklineTotal"></canvas></div>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon green"><i data-lucide="target"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-label">FAQ Hit Rate</span>
+                    <h3 id="statHitRate">0%</h3>
+                  </div>
+                </div>
+                <div class="stat-footer">
+                  <span id="statFaqHits" class="meta green-text">0 hits</span>
+                  <div class="sparkline"><canvas id="sparklineHits"></canvas></div>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon orange"><i data-lucide="bot"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-label">AI Fallback Rate</span>
+                    <h3 id="statLlmRate">0%</h3>
+                  </div>
+                </div>
+                <div class="stat-footer">
+                  <span id="statLlmHits" class="meta orange-text">0 fallbacks</span>
+                  <div class="sparkline"><canvas id="sparklineLlm"></canvas></div>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon blue"><i data-lucide="phone-forwarded"></i></div>
+                  <div class="stat-info">
+                    <span class="stat-label">Helpline Escaped</span>
+                    <h3 id="statHelplineRate">0%</h3>
+                  </div>
+                </div>
+                <div class="stat-footer">
+                  <span id="statHelplineCount" class="meta blue-text">0 escaped</span>
+                  <div class="sparkline"><canvas id="sparklineHelpline"></canvas></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="charts-row">
+              <div class="chart-card main-chart">
+                <div class="chart-header">
+                  <h3>Queries Over Time</h3>
+                  <select class="chart-filter">
+                    <option>Last 7 days</option>
+                    <option>Last 30 days</option>
+                  </select>
+                </div>
+                <div class="chart-container">
+                  <canvas id="queriesChart"></canvas>
+                </div>
+              </div>
+              <div class="chart-card donut-chart">
+                <div class="chart-header">
+                  <h3>Query Breakdown</h3>
+                </div>
+                <div class="chart-container">
+                  <canvas id="breakdownChart"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <div class="activity-card">
+              <div class="card-header">
+                <h3>Recent Activity</h3>
+              </div>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Event</th>
+                      <th>Details</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recentActivityTable">
+                    <!-- Logs will be inserted here -->
+                  </tbody>
+                </table>
+              </div>
+              <div class="card-footer">
+                <button class="link-btn" onclick="switchTab('logs')">
+                  <span>View all logs</span>
+                  <i data-lucide="arrow-right"></i>
+                </button>
+              </div>
             </div>
           </div>
-          <div id="faqsList" class="faq-list"></div>
-        </section>
 
-        <section id="logs" class="panel">
-          <div class="panel-heading">
-            <h2>Logs</h2>
+          <!-- FAQs Panel -->
+          <div id="faqs" class="panel">
             <div class="toolbar">
-              <input id="logSearch" placeholder="Search logs" />
+              <div class="search-box">
+                <i data-lucide="search"></i>
+                <input id="faqSearch" placeholder="Search FAQs..." />
+              </div>
+              <div class="filter-box">
+                <i data-lucide="filter"></i>
+                <input id="faqGroupChooser" list="groupOptions" placeholder="Filter by group" />
+              </div>
+              <button id="createFaqBtn" class="primary-btn">
+                <i data-lucide="plus"></i>
+                <span>Add FAQ</span>
+              </button>
+            </div>
+            <div id="faqsList" class="faq-list"></div>
+          </div>
+
+          <!-- Logs Panel -->
+          <div id="logs" class="panel">
+            <div class="toolbar">
+              <div class="search-box">
+                <i data-lucide="search"></i>
+                <input id="logSearch" placeholder="Search logs..." />
+              </div>
               <select id="logTypeFilter">
                 <option value="">All types</option>
                 <option value="faq_hit">FAQ hit</option>
@@ -91,118 +259,223 @@
                 <option value="30d">Last month</option>
               </select>
             </div>
+            <div id="logsList" class="log-list"></div>
           </div>
-          <div id="logsList" class="log-list"></div>
-        </section>
 
-        <section id="groups" class="panel">
-          <div class="panel-heading">
-            <h2>Groups</h2>
-            <input id="groupSearch" placeholder="Search groups" style="max-width:260px;" />
-          </div>
-          <form id="groupForm" class="form-grid">
-            <input id="groupId" placeholder="group id, optional" />
-            <input id="groupName" placeholder="Group name" required />
-            <input id="groupDescription" placeholder="Description" />
-            <div class="span-all">
-              <label>Sites in group</label>
-              <div id="groupSiteChecks" class="check-grid"></div>
+          <!-- Groups Panel -->
+          <div id="groups" class="panel">
+            <div class="form-card">
+              <h3>Create / Edit Group</h3>
+              <form id="groupForm" class="group-form">
+                <div class="input-grid">
+                  <input id="groupId" placeholder="Group ID (optional)" />
+                  <input id="groupName" placeholder="Group Name" required />
+                  <div class="span-all">
+                    <input id="groupDescription" placeholder="Description" />
+                  </div>
+                  <div class="span-all">
+                    <label>Sites in group</label>
+                    <div id="groupSiteChecks" class="check-grid"></div>
+                  </div>
+                </div>
+                <button type="submit" class="primary-btn">Save Group</button>
+              </form>
             </div>
-            <button type="submit">Save Group</button>
-          </form>
-          <div id="groupsList" class="table"></div>
-        </section>
-
-        <section id="tester" class="panel">
-          <div class="panel-heading"><h2>Tester</h2><span id="testerSiteName" class="meta">No site selected</span></div>
-          <div id="testMessages" class="messages"></div>
-          <form id="leadForm" class="form-grid">
-            <input id="testName" placeholder="Name" />
-            <input id="testEmail" placeholder="Email" />
-            <input id="testPhone" placeholder="Phone" />
-            <button id="startSessionBtn" type="submit">Start Session</button>
-          </form>
-          <form id="testForm" class="tester hidden">
-            <input id="testQuestion" placeholder="Ask a question..." autocomplete="off" />
-            <button id="testSendBtn" type="submit">Send</button>
-          </form>
-        </section>
-
-        <section id="settings" class="panel">
-          <div class="panel-heading">
-            <h2>Site Settings</h2>
-            <button id="addSiteBtn" type="button">Add Site</button>
-          </div>
-          <form id="settingsForm" class="form-grid">
-            <input id="setHelpline" placeholder="Helpline number" required />
-            <input id="setWelcome" placeholder="Welcome message" />
-            <input id="setFallback" placeholder="Fallback message" />
-            <input id="setAcceptDist" type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
-            <input id="setCandidateDist" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
-            <input id="setOrigins" placeholder="Allowed origins, comma separated" />
-            <div class="span-all branding-row">
-              <label>Color <input id="setPrimaryColor" type="color" value="#22c55e" /></label>
-              <input id="setBotName" placeholder="Bot display name" />
-              <input id="setBotAvatar" placeholder="Bot avatar URL" />
-              <input id="setLauncher" placeholder="Icon" />
+            <div class="toolbar">
+               <div class="search-box">
+                <i data-lucide="search"></i>
+                <input id="groupSearch" placeholder="Search groups..." />
+              </div>
             </div>
-            <label class="checkbox-row span-all"><input id="setActive" type="checkbox" checked /> Site Active</label>
-            <button type="submit" class="span-all">Save Settings</button>
-          </form>
-          <div class="panel-heading"><h2>Widget Snippet</h2></div>
-          <div class="snippet-wrap">
-            <pre id="snippetCode" class="snippet-box"></pre>
-            <button id="copySnippetBtn" type="button" class="copy-btn">Copy</button>
+            <div id="groupsList" class="groups-table"></div>
+          </div>
+
+          <!-- Tester Panel -->
+          <div id="tester" class="panel">
+            <div class="tester-container">
+              <div class="tester-header">
+                <h3>Bot Tester</h3>
+                <span id="testerSiteName" class="badge">No site selected</span>
+              </div>
+              <div id="testMessages" class="chat-window"></div>
+              <form id="leadForm" class="tester-lead-form">
+                <div class="input-row">
+                  <input id="testName" placeholder="Name" />
+                  <input id="testEmail" placeholder="Email" />
+                  <input id="testPhone" placeholder="Phone" />
+                </div>
+                <button id="startSessionBtn" type="submit" class="primary-btn">Start Session</button>
+              </form>
+              <form id="testForm" class="tester-chat-form hidden">
+                <input id="testQuestion" placeholder="Ask a question..." autocomplete="off" />
+                <button id="testSendBtn" type="submit" class="send-btn">
+                  <i data-lucide="send"></i>
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Settings Panel -->
+          <div id="settings" class="panel">
+            <div class="settings-grid">
+              <div class="settings-card">
+                <h3>General Settings</h3>
+                <form id="settingsForm" class="settings-form">
+                  <div class="input-group">
+                    <label>Helpline Number</label>
+                    <input id="setHelpline" required />
+                  </div>
+                  <div class="input-group">
+                    <label>Welcome Message</label>
+                    <textarea id="setWelcome"></textarea>
+                  </div>
+                  <div class="input-group">
+                    <label>Fallback Message</label>
+                    <textarea id="setFallback"></textarea>
+                  </div>
+                  <div class="input-row">
+                    <div class="input-group">
+                      <label>FAQ Accept Distance</label>
+                      <input id="setAcceptDist" type="number" min="0" max="2" step="0.01" />
+                    </div>
+                    <div class="input-group">
+                      <label>LLM Candidate Distance</label>
+                      <input id="setCandidateDist" type="number" min="0" max="2" step="0.01" />
+                    </div>
+                  </div>
+                  <div class="input-group">
+                    <label>Allowed Origins (comma separated)</label>
+                    <input id="setOrigins" />
+                  </div>
+                  
+                  <div class="branding-section">
+                    <h4>Branding</h4>
+                    <div class="branding-row">
+                      <div class="input-group">
+                        <label>Primary Color</label>
+                        <input id="setPrimaryColor" type="color" />
+                      </div>
+                      <div class="input-group">
+                        <label>Bot Name</label>
+                        <input id="setBotName" />
+                      </div>
+                    </div>
+                    <div class="input-group">
+                      <label>Bot Avatar URL</label>
+                      <input id="setBotAvatar" />
+                    </div>
+                    <div class="input-group">
+                      <label>Launcher Icon</label>
+                      <input id="setLauncher" />
+                    </div>
+                  </div>
+
+                  <label class="checkbox-label">
+                    <input id="setActive" type="checkbox" checked />
+                    <span>Site Active</span>
+                  </label>
+                  <button type="submit" class="primary-btn">Save Changes</button>
+                </form>
+              </div>
+
+              <div class="snippet-card">
+                <div class="card-header">
+                  <h3>Widget Snippet</h3>
+                  <button id="addSiteBtn" class="secondary-btn btn-sm">Add New Site</button>
+                </div>
+                <p class="muted">Add this code to your website to enable the chatbot.</p>
+                <div class="code-block">
+                  <pre id="snippetCode"></pre>
+                  <button id="copySnippetBtn" class="copy-btn"><i data-lucide="copy"></i></button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
-      </section>
-    </main>
+      </main>
+    </div>
 
     <datalist id="siteOptions"></datalist>
     <datalist id="groupOptions"></datalist>
 
+    <!-- Modals -->
     <dialog id="registerModal" class="modal">
-      <form id="registerForm" class="form-grid modal-body">
-        <div class="modal-title span-all"><h2>Register Chatbot</h2><button id="closeRegisterBtn" type="button" class="ghost">Close</button></div>
-        <input id="regEmail" type="email" placeholder="Email" required />
-        <input id="regPassword" type="password" placeholder="Password" required />
-        <input id="regSiteName" placeholder="Site name" required />
-        <input id="regDomain" placeholder="Domain" />
-        <input id="regHelpline" placeholder="Helpline number" required />
-        <input id="regWelcome" placeholder="Welcome message" />
-        <input id="regFallback" placeholder="Fallback message" />
-        <button type="submit" class="span-all">Create Chatbot</button>
-        <div id="registerSnippetWrap" class="span-all hidden">
-          <pre id="registerSnippet" class="snippet-box"></pre>
-          <button id="copyRegisterSnippetBtn" type="button">Copy Snippet</button>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Register Chatbot</h2>
+          <button id="closeRegisterBtn" class="close-btn"><i data-lucide="x"></i></button>
         </div>
-      </form>
+        <form id="registerForm" class="modal-form">
+          <div class="input-grid">
+            <input id="regEmail" type="email" placeholder="Email" required />
+            <input id="regPassword" type="password" placeholder="Password" required />
+            <input id="regSiteName" placeholder="Site name" required />
+            <input id="regDomain" placeholder="Domain" />
+            <div class="span-all"><input id="regHelpline" placeholder="Helpline number" required /></div>
+            <div class="span-all"><textarea id="regWelcome" placeholder="Welcome message"></textarea></div>
+            <div class="span-all"><textarea id="regFallback" placeholder="Fallback message"></textarea></div>
+          </div>
+          <button type="submit" class="primary-btn">Create Chatbot</button>
+          <div id="registerSnippetWrap" class="code-block hidden">
+            <pre id="registerSnippet"></pre>
+            <button id="copyRegisterSnippetBtn" type="button" class="copy-btn"><i data-lucide="copy"></i></button>
+          </div>
+        </form>
+      </div>
     </dialog>
 
     <dialog id="siteModal" class="modal">
-      <form id="siteForm" class="form-grid modal-body">
-        <div class="modal-title span-all"><h2>Add Site</h2><button id="closeSiteModalBtn" type="button" class="ghost">Close</button></div>
-        <input id="siteName" placeholder="Site name" required />
-        <input id="siteDomain" placeholder="Domain" />
-        <input id="siteHelpline" placeholder="Helpline number" required />
-        <input id="siteWelcome" placeholder="Welcome message" />
-        <input id="siteFallback" placeholder="Fallback message" />
-        <button type="submit" class="span-all">Create Site</button>
-      </form>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Add New Site</h2>
+          <button id="closeSiteModalBtn" class="close-btn"><i data-lucide="x"></i></button>
+        </div>
+        <form id="siteForm" class="modal-form">
+          <div class="input-grid">
+            <input id="siteName" placeholder="Site name" required />
+            <input id="siteDomain" placeholder="Domain" />
+            <div class="span-all"><input id="siteHelpline" placeholder="Helpline number" required /></div>
+            <div class="span-all"><textarea id="siteWelcome" placeholder="Welcome message"></textarea></div>
+            <div class="span-all"><textarea id="siteFallback" placeholder="Fallback message"></textarea></div>
+          </div>
+          <button type="submit" class="primary-btn">Create Site</button>
+        </form>
+      </div>
     </dialog>
 
     <dialog id="faqModal" class="modal">
-      <form id="faqForm" class="faq-form modal-body">
-        <div class="modal-title"><h2 id="faqModalTitle">Add FAQ</h2><button id="closeFaqModalBtn" type="button" class="ghost">Close</button></div>
-        <input id="faqId" type="hidden" />
-        <input id="faqTargetGroup" list="groupOptions" placeholder="Target group, optional" />
-        <input id="faqQuestion" placeholder="Question" required />
-        <textarea id="faqAliases" placeholder="Aliases, one per line"></textarea>
-        <textarea id="faqAnswer" placeholder="Exact answer to return" required></textarea>
-        <div class="form-actions"><button type="submit">Save FAQ</button><button id="clearFaqBtn" type="button" class="ghost">Clear</button></div>
-      </form>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="faqModalTitle">Add FAQ</h2>
+          <button id="closeFaqModalBtn" class="close-btn"><i data-lucide="x"></i></button>
+        </div>
+        <form id="faqForm" class="modal-form">
+          <input id="faqId" type="hidden" />
+          <div class="input-group">
+            <label>Target Group (optional)</label>
+            <input id="faqTargetGroup" list="groupOptions" />
+          </div>
+          <div class="input-group">
+            <label>Question</label>
+            <input id="faqQuestion" required />
+          </div>
+          <div class="input-group">
+            <label>Aliases (one per line)</label>
+            <textarea id="faqAliases"></textarea>
+          </div>
+          <div class="input-group">
+            <label>Exact Answer</label>
+            <textarea id="faqAnswer" required></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="primary-btn">Save FAQ</button>
+            <button id="clearFaqBtn" type="button" class="ghost-btn">Clear</button>
+          </div>
+        </form>
+      </div>
     </dialog>
 
     <script src="./app.js"></script>
+    <script>lucide.createIcons();</script>
   </body>
 </html>
