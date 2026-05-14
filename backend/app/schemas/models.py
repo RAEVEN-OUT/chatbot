@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Optional, Union, List, Dict
 
 from pydantic import BaseModel, Field
 
@@ -38,7 +38,7 @@ class BackgroundTaskRecord(BaseModel):
     status: BackgroundTaskStatus = BackgroundTaskStatus.pending
     progress: int = 0
     message: str = ""
-    error: str | None = None
+    error: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -53,36 +53,36 @@ class SiteBase(BaseModel):
     faq_review_distance: float = 0.45
     llm_candidate_distance: float = 0.55
     active: bool = True
-    allowed_origins: list[str] = Field(default_factory=list)
+    allowed_origins: List[str] = Field(default_factory=list)
     primary_color: str = "#126c57"
     bot_name: str = "Support Bot"
     bot_avatar_url: str = ""
     launcher_icon: str = "?"
-    deleted_at: datetime | None = None
-    purge_after: datetime | None = None
+    deleted_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
 
 
 class SiteCreate(SiteBase):
-    id: str | None = None
+    id: Optional[str] = None
 
 
 class SiteUpdate(BaseModel):
-    name: str | None = None
-    domain: str | None = None
-    helpline_number: str | None = None
-    welcome_message: str | None = None
-    fallback_message: str | None = None
-    faq_accept_distance: float | None = None
-    faq_review_distance: float | None = None
-    llm_candidate_distance: float | None = None
-    active: bool | None = None
-    allowed_origins: list[str] | None = None
-    primary_color: str | None = None
-    bot_name: str | None = None
-    bot_avatar_url: str | None = None
-    launcher_icon: str | None = None
-    deleted_at: datetime | None = None
-    purge_after: datetime | None = None
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    helpline_number: Optional[str] = None
+    welcome_message: Optional[str] = None
+    fallback_message: Optional[str] = None
+    faq_accept_distance: Optional[float] = None
+    faq_review_distance: Optional[float] = None
+    llm_candidate_distance: Optional[float] = None
+    active: Optional[bool] = None
+    allowed_origins: Optional[List[str]] = None
+    primary_color: Optional[str] = None
+    bot_name: Optional[str] = None
+    bot_avatar_url: Optional[str] = None
+    launcher_icon: Optional[str] = None
+    deleted_at: Optional[datetime] = None
+    purge_after: Optional[datetime] = None
 
 
 class SiteRecord(SiteBase):
@@ -94,19 +94,19 @@ class SiteRecord(SiteBase):
 class SiteGroupBase(BaseModel):
     name: str
     description: str = ""
-    site_ids: list[str] = Field(default_factory=list)
+    site_ids: List[str] = Field(default_factory=list)
     active: bool = True
 
 
 class SiteGroupCreate(SiteGroupBase):
-    id: str | None = None
+    id: Optional[str] = None
 
 
 class SiteGroupUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    site_ids: list[str] | None = None
-    active: bool | None = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    site_ids: Optional[List[str]] = None
+    active: Optional[bool] = None
 
 
 class SiteGroupRecord(SiteGroupBase):
@@ -118,23 +118,23 @@ class SiteGroupRecord(SiteGroupBase):
 class FaqBase(BaseModel):
     question: str
     answer: str
-    aliases: list[str] = Field(default_factory=list)
+    aliases: List[str] = Field(default_factory=list)
     site_id: str = ""
     group_id: str = ""
     active: bool = True
 
 
 class FaqCreate(FaqBase):
-    id: str | None = None
+    id: Optional[str] = None
 
 
 class FaqUpdate(BaseModel):
-    question: str | None = None
-    answer: str | None = None
-    aliases: list[str] | None = None
-    site_id: str | None = None
-    group_id: str | None = None
-    active: bool | None = None
+    question: Optional[str] = None
+    answer: Optional[str] = None
+    aliases: Optional[List[str]] = None
+    site_id: Optional[str] = None
+    group_id: Optional[str] = None
+    active: Optional[bool] = None
 
 
 class FaqRecord(FaqBase):
@@ -150,7 +150,7 @@ class FaqVectorRecord(BaseModel):
     source_text: str
     source_type: str
     normalized_text: str
-    embedding: list[float]
+    embedding: List[float]
     answer_snapshot: str
     question_snapshot: str
     active: bool = True
@@ -175,7 +175,7 @@ class ChatSessionRecord(ChatSessionCreate):
 class ChatMessageRequest(BaseModel):
     site_id: str
     question: str = Field(min_length=1, max_length=2000)
-    session_id: str | None = None
+    session_id: Optional[str] = None
     name: str = ""
     email: str = ""
     phone: str = ""
@@ -184,9 +184,9 @@ class ChatMessageRequest(BaseModel):
 class ChatMessageResponse(BaseModel):
     answer: str
     response_type: ResponseType
-    matched_faq_id: str | None = None
-    vector_distance: float | None = None
-    session_id: str | None = None
+    matched_faq_id: Optional[str] = None
+    vector_distance: Optional[float] = None
+    session_id: Optional[str] = None
 
 
 class ChatLogRecord(BaseModel):
@@ -199,19 +199,19 @@ class ChatLogRecord(BaseModel):
     question: str
     answer: str
     response_type: ResponseType
-    matched_faq_id: str | None = None
-    vector_distance: float | None = None
+    matched_faq_id: Optional[str] = None
+    vector_distance: Optional[float] = None
     llm_model: str = ""
     timestamp: datetime = Field(default_factory=utc_now)
     review_status: ReviewStatus = ReviewStatus.pending
-    converted_to_faq_id: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    converted_to_faq_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class AdminUserCreate(BaseModel):
     email: str
     password: str
-    site_ids: list[str] = Field(default_factory=list)
+    site_ids: List[str] = Field(default_factory=list)
 
 
 class SiteOwnerRegistration(BaseModel):

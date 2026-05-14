@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
+import base64
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 try:
     from dotenv import load_dotenv
@@ -22,21 +25,24 @@ def resolve_project_path(path_value: str | os.PathLike[str]) -> Path:
     if path.is_absolute():
         return path
 
-    candidates = [
-        ROOT_DIR / path,
-        Path.cwd() / path,
-        Path.cwd().parent / path,
-    ]
+    candidates = [ROOT_DIR / path, Path.cwd() / path]
+    candidates.extend(parent / path for parent in Path.cwd().parents)
+    candidates.extend(parent / path for parent in ROOT_DIR.parents)
     for candidate in candidates:
         if candidate.exists():
             return candidate
     return ROOT_DIR / path
 
+
 credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 if credentials_path:
     credentials_path = credentials_path.strip().strip('"').strip("'")
     if credentials_path:
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(resolve_project_path(credentials_path))
+        resolved_credentials_path = resolve_project_path(credentials_path)
+        if resolved_credentials_path.exists():
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(resolved_credentials_path)
+        else:
+            os.environ.pop("GOOGLE_APPLICATION_CREDENTIALS", None)
 
 
 def firebase_credentials_path() -> Path:
@@ -44,6 +50,32 @@ def firebase_credentials_path() -> Path:
     if configured:
         return resolve_project_path(configured)
     return resolve_project_path("firebase-key.json")
+
+
+def firebase_credentials_info() -> dict[str, Any] | None:
+    raw_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+    if raw_json:
+        return json.loads(raw_json)
+
+    raw_b64 = os.getenv("FIREBASE_SERVICE_ACCOUNT_B64", "").strip()
+    if raw_b64:
+        return json.loads(base64.b64decode(raw_b64).decode("utf-8"))
+
+    return None
+
+
+def firebase_credentials_status() -> dict[str, Any]:
+    if os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip():
+        return {"source": "FIREBASE_SERVICE_ACCOUNT_JSON", "exists": True}
+    if os.getenv("FIREBASE_SERVICE_ACCOUNT_B64", "").strip():
+        return {"source": "FIREBASE_SERVICE_ACCOUNT_B64", "exists": True}
+
+    path = firebase_credentials_path()
+    return {
+        "source": "GOOGLE_APPLICATION_CREDENTIALS" if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") else "firebase-key.json",
+        "exists": path.exists(),
+        "filename": path.name,
+    }
 
 
 def _get_bool(name: str, default: bool = False) -> bool:

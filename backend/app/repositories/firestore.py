@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from app.core.config import firebase_credentials_path, settings
+from app.core.config import firebase_credentials_info, firebase_credentials_path, settings
 from app.repositories.base import Repository
 from app.repositories.cache import TTLCache
 from app.repositories.memory import cosine_distance
@@ -28,16 +28,24 @@ class FirestoreRepository(Repository):
         except ImportError as exc:
             raise RuntimeError("Install google-cloud-firestore to use Firestore.") from exc
 
-        key_path = firebase_credentials_path()
         client_kwargs: dict[str, Any] = {"database": database}
         if project:
             client_kwargs["project"] = project
-        if key_path.exists():
+        credential_info = firebase_credentials_info()
+        if credential_info:
             from google.oauth2 import service_account
 
-            client_kwargs["credentials"] = service_account.Credentials.from_service_account_file(
-                str(key_path)
+            client_kwargs["credentials"] = service_account.Credentials.from_service_account_info(
+                credential_info
             )
+        else:
+            key_path = firebase_credentials_path()
+            if key_path.exists():
+                from google.oauth2 import service_account
+
+                client_kwargs["credentials"] = service_account.Credentials.from_service_account_file(
+                    str(key_path)
+                )
         self.db = firestore.Client(**client_kwargs)
 
         self._site_cache: TTLCache[str, SiteRecord] = TTLCache(
