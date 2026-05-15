@@ -130,6 +130,8 @@ function parseApiError(bodyText = "") {
 }
 
 function showLogin() { $("loginOverlay").classList.add("active"); $("mainLayout").style.display = "none"; }
+
+
 function hideLogin() { $("loginOverlay").classList.remove("active"); $("mainLayout").style.display = "grid"; }
 function setStatus(text) { $("statusText").textContent = text; }
 function setLoading(on) { $("globalLoading").style.display = on ? "flex" : "none"; }
@@ -141,6 +143,42 @@ function recentStamp(record) {
   const updated = record.updated_at ? new Date(record.updated_at).getTime() : 0;
   return updated && updated > created + 1000 ? `Updated ${formatDate(record.updated_at)}` : `Created ${formatDate(record.created_at)}`;
 }
+
+function showToast(message, type = "info", duration = 3000) {
+  const container = $("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  let content = `<span>${message}</span>`;
+  if (type === "loading") content += `<div class="toast-spinner"></div>`;
+  toast.innerHTML = content;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add("show"), 10);
+  if (type !== "loading" && duration > 0) {
+    setTimeout(() => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    }, duration);
+  }
+  return {
+    close: () => {
+      toast.classList.remove("show");
+      setTimeout(() => toast.remove(), 300);
+    },
+    update: (newMessage, newType) => {
+      toast.className = `toast ${newType}`;
+      toast.innerHTML = `<span>${newMessage}</span>${newType === "loading" ? '<div class="toast-spinner"></div>' : ""}`;
+    }
+  };
+}
+
+function finishToast(toast, message, type = "success", duration = 2500) {
+  if (!toast) return showToast(message, type, duration);
+  toast.update(message, type);
+  setTimeout(() => toast.close(), duration);
+  return toast;
+}
+
 function siteDisplay(site) { return site ? `${site.name} (${site.id})` : ""; }
 function groupDisplay(group) { return group ? `${group.name} (${group.id})` : ""; }
 function idFromChooser(value, items) {
@@ -1053,25 +1091,55 @@ $("loginForm").addEventListener("submit", async (e) => {
 });
 
 $("showRegisterBtn").addEventListener("click", () => $("registerModal").showModal());
-$("closeRegisterBtn").addEventListener("click", () => $("registerModal").close());
+$("closeRegisterBtn").addEventListener("click", () => {
+  $("registerModal").close();
+  $("registerForm").reset();
+});
 $("registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const payload = {
     email: $("regEmail").value.trim(),
     password: $("regPassword").value,
     site: {
-      name: $("regSiteName").value.trim(),
       domain: $("regDomain").value.trim(),
-      helpline_number: $("regHelpline").value.trim(),
-      welcome_message: $("regWelcome").value.trim() || "Hi, how can I help?",
-      fallback_message: $("regFallback").value.trim() || "I could not find the exact answer. Please contact our helpline.",
     },
   };
-  const result = await api("/api/register-site-owner", { method: "POST", body: JSON.stringify(payload) });
-  state.lastRegisteredSiteId = result.site.id;
-  $("registerSnippetWrap").classList.remove("hidden");
-  renderSnippet("registerSnippet");
-  await auth.signInWithCustomToken(result.firebase_token);
+  try {
+    const result = await api("/api/register-site-owner", { method: "POST", body: JSON.stringify(payload) });
+    state.lastRegisteredSiteId = result.site.id;
+    
+    // Close registration and show success
+    $("registerModal").close();
+    $("registerForm").reset();
+    $("registerSuccessModal").showModal();
+    renderSnippet("registerSuccessSnippet");
+    
+    // Continue login in background
+    await auth.signInWithCustomToken(result.firebase_token);
+  } catch (error) {
+    if (error.message.includes("EMAIL_EXISTS")) {
+      showToast("Account already exists. Please sign in.", "info", 5000);
+      $("registerModal").close();
+      $("registerForm").reset();
+      $("loginEmail").value = payload.email;
+      $("loginPassword").focus();
+    } else {
+      showToast(error.message, "error", 5000);
+    }
+  }
+});
+
+$("copySuccessSnippetBtn").addEventListener("click", () => {
+  const code = $("registerSuccessSnippet").textContent;
+  navigator.clipboard.writeText(code);
+  const btn = $("copySuccessSnippetBtn");
+  const icon = btn.querySelector("i");
+  icon.setAttribute("data-lucide", "check");
+  lucide.createIcons();
+  setTimeout(() => {
+    icon.setAttribute("data-lucide", "copy");
+    lucide.createIcons();
+  }, 2000);
 });
 
 $("logoutBtn").addEventListener("click", () => { 

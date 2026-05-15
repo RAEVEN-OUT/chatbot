@@ -323,7 +323,7 @@ class RetrievalService:
         sub_questions = self._decompose_question(question)
         if len(sub_questions) < 2:
             if self._is_aggregation_question(question):
-                return self._composite_from_ranked_results(site, question, initial_results)
+                return await self._composite_from_ranked_results(site, question, initial_results)
             return None
 
         async def match_sub_question(sub_question: str) -> tuple[str, FaqVectorRecord, float] | None:
@@ -374,19 +374,37 @@ class RetrievalService:
             return None
 
         ordered = list(by_faq.values())
-        answer = "\n\n".join(
-            f"{index + 1}. {vector.answer_snapshot}"
-            for index, (_, vector, _) in enumerate(ordered)
-        )
+        vectors = [vector for _, vector, _ in ordered]
+
+        llm_answer = None
+        if self.llm.model_name:
+            try:
+                llm_answer = await self.llm.answer_from_faqs_async(question, vectors, site=site)
+            except Exception:
+                logger.exception("LLM formatting failed for composite question, falling back to basic join")
+
+        if llm_answer:
+            answer = llm_answer
+            response_type = ResponseType.llm_fallback
+            llm_model = self.llm.model_name
+        else:
+            answer = "\n\n".join(
+                f"{index + 1}. {vector.answer_snapshot}"
+                for index, vector in enumerate(vectors)
+            )
+            response_type = ResponseType.faq_hit
+            llm_model = ""
+
         best_vector, best_distance = initial_results[0]
         return RetrievalCandidate(
             answer=answer,
-            response_type=ResponseType.faq_hit,
+            response_type=response_type,
             matched_faq_id=best_vector.faq_id,
             vector_distance=min(distance for _, _, distance in ordered),
+            llm_model=llm_model,
         )
 
-    def _composite_from_ranked_results(
+    async def _composite_from_ranked_results(
         self,
         site: SiteRecord,
         question: str,
@@ -413,16 +431,34 @@ class RetrievalService:
             return None
 
         ordered = sorted(by_faq.values(), key=lambda item: item[1])[:4]
-        answer = "\n\n".join(
-            f"{index + 1}. {vector.answer_snapshot}"
-            for index, (vector, _) in enumerate(ordered)
-        )
+        vectors = [vector for vector, _ in ordered]
+
+        llm_answer = None
+        if self.llm.model_name:
+            try:
+                llm_answer = await self.llm.answer_from_faqs_async(question, vectors, site=site)
+            except Exception:
+                logger.exception("LLM formatting failed for ranked composite question, falling back to basic join")
+
+        if llm_answer:
+            answer = llm_answer
+            response_type = ResponseType.llm_fallback
+            llm_model = self.llm.model_name
+        else:
+            answer = "\n\n".join(
+                f"{index + 1}. {vector.answer_snapshot}"
+                for index, vector in enumerate(vectors)
+            )
+            response_type = ResponseType.faq_hit
+            llm_model = ""
+
         best_vector, best_distance = ordered[0]
         return RetrievalCandidate(
             answer=answer,
-            response_type=ResponseType.faq_hit,
+            response_type=response_type,
             matched_faq_id=best_vector.faq_id,
             vector_distance=best_distance,
+            llm_model=llm_model,
         )
 
     def _llm_candidates(

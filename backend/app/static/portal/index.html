@@ -32,7 +32,7 @@
             <input type="password" id="loginPassword" placeholder="••••••••" required />
           </div>
           <button type="submit" class="primary-btn">Sign In</button>
-          <button id="showRegisterBtn" type="button" class="ghost-btn">Register Chatbot</button>
+          <button id="showRegisterBtn" type="button" class="ghost-btn">Register User</button>
           <p id="loginError" class="error-text"></p>
         </form>
       </div>
@@ -120,7 +120,7 @@
           </div>
         </div>
 
-        <section class="content-panels">
+        <div class="content-panels">
           <!-- Analytics Panel -->
           <div id="analytics" class="panel active-panel">
             <div class="stats-grid">
@@ -491,7 +491,7 @@
               </div>
             </div>
           </div>
-        </section>
+        </div>
       </main>
     </div>
 
@@ -516,25 +516,57 @@
     <dialog id="registerModal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
-          <h2>Register Chatbot</h2>
+          <h2>Register User</h2>
           <button id="closeRegisterBtn" class="close-btn"><i data-lucide="x"></i></button>
         </div>
         <form id="registerForm" class="modal-form">
-          <div class="input-grid">
-            <input id="regEmail" type="email" placeholder="Email" required />
-            <input id="regPassword" type="password" placeholder="Password" required />
-            <input id="regSiteName" placeholder="Site name" required />
-            <input id="regDomain" placeholder="Domain" />
-            <div class="span-all"><input id="regHelpline" placeholder="Helpline number" required /></div>
-            <div class="span-all"><textarea id="regWelcome" placeholder="Welcome message"></textarea></div>
-            <div class="span-all"><textarea id="regFallback" placeholder="Fallback message"></textarea></div>
+          <div class="input-grid" style="grid-template-columns: 1fr;">
+            <div class="input-group">
+              <label>Email Address</label>
+              <input id="regEmail" type="email" placeholder="name@company.com" required />
+            </div>
+            <div class="input-group">
+              <label>Password</label>
+              <input id="regPassword" type="password" placeholder="••••••••" required />
+            </div>
+            <div class="input-group">
+              <label>Site Domain</label>
+              <input id="regDomain" placeholder="example.com" required />
+            </div>
           </div>
-          <button type="submit" class="primary-btn">Create Chatbot</button>
-          <div id="registerSnippetWrap" class="code-block hidden">
-            <pre id="registerSnippet"></pre>
-            <button id="copyRegisterSnippetBtn" type="button" class="copy-btn"><i data-lucide="copy"></i></button>
-          </div>
+          <button type="submit" class="primary-btn" style="width: 100%;">Create My Chatbot</button>
         </form>
+      </div>
+    </dialog>
+
+    <dialog id="registerSuccessModal" class="modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 style="color: var(--success); display: flex; align-items: center; gap: 8px;">
+            <i data-lucide="check-circle"></i> Chatbot Created!
+          </h2>
+          <button onclick="$('registerSuccessModal').close()" class="close-btn"><i data-lucide="x"></i></button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 20px;">Your chatbot has been successfully initialized. To start using it on your website, copy the snippet below and paste it before the closing <code>&lt;/body&gt;</code> tag.</p>
+          
+          <div class="code-block" style="margin-bottom: 24px;">
+            <pre id="registerSuccessSnippet"></pre>
+            <button id="copySuccessSnippetBtn" type="button" class="copy-btn"><i data-lucide="copy"></i></button>
+          </div>
+
+          <div style="background: #f8fafc; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+            <h4 style="margin-bottom: 8px; font-size: 14px;">Next Steps:</h4>
+            <ul style="padding-left: 20px; font-size: 13px; color: var(--text-muted);">
+              <li>The portal will automatically log you in.</li>
+              <li>You can manage FAQs and settings from the dashboard.</li>
+              <li>Use the "Tester" tab to try out your bot before going live.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer" style="margin-top: 24px;">
+          <button onclick="$('registerSuccessModal').close()" class="primary-btn" style="width: 100%;">Go to Dashboard</button>
+        </div>
       </div>
     </dialog>
 
@@ -595,8 +627,6 @@
       </div>
     </dialog>
 
-    <script src="./app.js"></script>
-    <script>lucide.createIcons();</script>
     <dialog id="helpModal" class="modal">
       <div class="modal-content">
         <div class="modal-header">
@@ -611,5 +641,9 @@
         </div>
       </div>
     </dialog>
+
+    <div id="toastContainer" class="toast-container"></div>
+    <script src="./app.js"></script>
+    <script>lucide.createIcons();</script>
   </body>
 </html>
