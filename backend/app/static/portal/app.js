@@ -1,4 +1,25 @@
-const state = { sites: [], groups: [], faqs: [], logs: [], currentSiteId: "", sessionId: "", principal: null, charts: {}, currentAliases: [], logPage: 0, logLimit: 15, testerSessions: JSON.parse(sessionStorage.getItem('testerSessions') || '{}') };
+const TESTER_SESSIONS_KEY = "portal:testerSessions";
+const TESTER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+function loadTesterSessions() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TESTER_SESSIONS_KEY) || "{}");
+    const now = Date.now();
+    return Object.fromEntries(
+      Object.entries(stored).filter(([, session]) => (
+        session && session.updatedAt && now - session.updatedAt < TESTER_SESSION_TTL_MS
+      ))
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveTesterSessions() {
+  localStorage.setItem(TESTER_SESSIONS_KEY, JSON.stringify(state.testerSessions));
+}
+
+const state = { sites: [], groups: [], faqs: [], logs: [], currentSiteId: "", currentGroupId: "", sessionId: "", principal: null, charts: {}, currentAliases: [], logPage: 0, logLimit: 15, testerSessions: loadTesterSessions() };
 const $ = (id) => document.getElementById(id);
 
 const Cache = {
@@ -17,10 +38,13 @@ const Cache = {
   set: (key, data, ttl = 600000) => { // Default 10 mins
     localStorage.setItem(`cache:${key}`, JSON.stringify({ data, expiry: Date.now() + ttl }));
   },
+  remove: (key) => localStorage.removeItem(`cache:${key}`),
   clear: () => {
     Object.keys(localStorage).forEach(k => k.startsWith('cache:') && localStorage.removeItem(k));
   }
 };
+
+const SELECTION_KEY = "portal:selectedContext";
 
 const firebaseConfig = {
   apiKey: "AIzaSyC1QxlKBkLpT2htParIuodhPNX6qtTGnlU",
@@ -126,6 +150,89 @@ function idFromChooser(value, items) {
   return items.find((item) => item.id === candidate || item.name === trimmed)?.id || candidate;
 }
 function currentSite() { return state.sites.find((site) => site.id === state.currentSiteId); }
+function currentGroup() { return state.groups.find((group) => group.id === state.currentGroupId); }
+function isSiteMode() { return $("toggleSitesBtn")?.classList.contains("active") !== false; }
+function currentContextKey() { return isSiteMode() ? `site:${state.currentSiteId}` : `group:${state.currentGroupId}`; }
+function currentContextParams() {
+  const params = new URLSearchParams();
+  if (isSiteMode() && state.currentSiteId) params.set("site_id", state.currentSiteId);
+  if (!isSiteMode() && state.currentGroupId) params.set("group_id", state.currentGroupId);
+  return params;
+}
+
+function contextDisplayName() {
+  return isSiteMode()
+    ? (currentSite()?.name || state.currentSiteId || "site")
+    : (currentGroup()?.name || state.currentGroupId || "group");
+}
+
+function saveSelectedContext() {
+  const mode = isSiteMode() ? "site" : "group";
+  const id = mode === "site" ? state.currentSiteId : state.currentGroupId;
+  if (id) {
+    localStorage.setItem(SELECTION_KEY, JSON.stringify({
+      mode,
+      id,
+      siteId: state.currentSiteId,
+      groupId: state.currentGroupId,
+    }));
+  }
+}
+
+function restoreSelectedContext(params = new URLSearchParams()) {
+  const siteId = params.get("site_id");
+  if (siteId && state.sites.some((site) => site.id === siteId)) {
+    state.currentSiteId = siteId;
+    $("toggleSitesBtn")?.classList.add("active");
+    $("toggleGroupsBtn")?.classList.remove("active");
+    saveSelectedContext();
+    return;
+  }
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(SELECTION_KEY) || "null");
+    const savedSiteId = saved?.siteId || (saved?.mode === "site" ? saved.id : "");
+    const savedGroupId = saved?.groupId || (saved?.mode === "group" ? saved.id : "");
+    if (savedSiteId && state.sites.some((site) => site.id === savedSiteId)) {
+      state.currentSiteId = savedSiteId;
+    }
+    if (savedGroupId && state.groups.some((group) => group.id === savedGroupId)) {
+      state.currentGroupId = savedGroupId;
+    }
+    if (saved?.mode === "group" && state.currentGroupId) {
+      $("toggleGroupsBtn")?.classList.add("active");
+      $("toggleSitesBtn")?.classList.remove("active");
+      return;
+    }
+    if (saved?.mode === "site" && state.currentSiteId) {
+      $("toggleSitesBtn")?.classList.add("active");
+      $("toggleGroupsBtn")?.classList.remove("active");
+      return;
+    }
+  } catch {}
+
+  if (!state.currentSiteId && !state.currentGroupId && state.sites.length) {
+    state.currentSiteId = state.sites[0].id;
+    $("toggleSitesBtn")?.classList.add("active");
+    $("toggleGroupsBtn")?.classList.remove("active");
+  }
+}
+
+function clearCurrentContextCache() {
+  const contextKey = currentContextKey();
+  ["faqs", "logs", "analytics"].forEach((type) => Cache.remove(`${type}:${contextKey}`));
+}
+
+function renderFaqLoading() {
+  if ($("faqsList")) $("faqsList").innerHTML = `<div class="empty-state"><i data-lucide="loader"></i><p>Retrieving knowledge base...</p></div>`;
+  lucide.createIcons();
+}
+
+function renderLogLoading() {
+  if ($("logsList")) $("logsList").innerHTML = `<div class="empty-state"><i data-lucide="loader"></i><p>Retrieving conversation logs...</p></div>`;
+  if ($("recentActivityTable")) $("recentActivityTable").innerHTML = '<tr><td colspan="4" class="muted" style="text-align:center;padding:40px;">Retrieving activity...</td></tr>';
+  lucide.createIcons();
+}
 
 async function bootstrapPortal() {
   // 1. Try immediate render from cache for "smooth" feel
@@ -139,23 +246,23 @@ async function bootstrapPortal() {
     state.groups = cachedGroups;
     if (state.sites.length) {
       const params = new URLSearchParams(window.location.search);
-      state.currentSiteId = params.get("site_id") || state.currentSiteId || state.sites[0].id;
+      restoreSelectedContext(params);
       
       // Determine initial tab from URL hash or default to analytics
       const initialTab = window.location.hash.replace('#', '') || 'analytics';
       switchTab(initialTab);
 
       renderReferenceControls();
-      syncSiteChooser();
+      syncSelectionBar();
       renderGroups();
       prefillSettings();
       renderSnippet();
       
       // Load cached secondary data
-      const sid = state.currentSiteId;
-      state.faqs = Cache.get(`faqs:${sid}`) || [];
-      state.logs = Cache.get(`logs:${sid}`) || [];
-      const cachedAnalytics = Cache.get(`analytics:${sid}`);
+      const contextKey = currentContextKey();
+      state.faqs = Cache.get(`faqs:${contextKey}`) || [];
+      state.logs = Cache.get(`logs:${contextKey}`) || [];
+      const cachedAnalytics = Cache.get(`analytics:${contextKey}`);
 
       if (state.faqs.length) renderFaqs();
       if (state.logs.length) { renderLogs(); renderRecentActivity(); }
@@ -180,13 +287,13 @@ async function bootstrapPortal() {
 
     if (!state.sites.length) return showNoAccess();
     const params = new URLSearchParams(window.location.search);
-    state.currentSiteId = params.get("site_id") || state.currentSiteId || state.sites[0].id;
+    restoreSelectedContext(params);
     
     renderReferenceControls();
-    syncSiteChooser();
+    syncSelectionBar();
     renderGroups();
     
-    await Promise.all([refreshFaqs(), refreshLogs(), refreshAnalytics()]);
+    await refreshContextData();
     prefillSettings();
     renderSnippet();
     setStatus("System Ready");
@@ -205,38 +312,122 @@ function showNoAccess() {
 function renderReferenceControls() {
   $("siteOptions").innerHTML = state.sites.map((site) => `<option value="${esc(siteDisplay(site))}"></option>`).join("");
   $("groupOptions").innerHTML = state.groups.map((group) => `<option value="${esc(groupDisplay(group))}"></option>`).join("");
-  $("groupsTab").style.display = state.sites.length > 1 ? "flex" : "none";
+  const hasGroups = state.groups.length > 0;
+  $("toggleGroupsBtn").style.display = hasGroups ? "" : "none";
+  $("groupsTab").style.display = "flex";
+  if (!hasGroups && !isSiteMode()) {
+    $("toggleSitesBtn")?.classList.add("active");
+    $("toggleGroupsBtn")?.classList.remove("active");
+  }
+  if (!state.currentSiteId && state.sites.length) state.currentSiteId = state.sites[0].id;
 }
 
-function syncSiteChooser() {
-  $("siteChooser").value = siteDisplay(currentSite());
+function syncSelectionBar() {
+  const siteMode = isSiteMode();
+  const currentId = siteMode ? state.currentSiteId : state.currentGroupId;
+  const selected = siteMode ? currentSite() : currentGroup();
+  $("toggleSitesBtn")?.classList.toggle("active", siteMode);
+  $("toggleGroupsBtn")?.classList.toggle("active", !siteMode);
+  if (!currentId) {
+    $("noSelectionPrompt").classList.remove("hidden");
+    $("selectionBar").classList.add("hidden");
+    $("initialSelectBtn").textContent = siteMode ? "Select Site" : "Select Group";
+  } else {
+    $("noSelectionPrompt").classList.add("hidden");
+    $("selectionBar").classList.remove("hidden");
+    $("selectionLabel").textContent = siteMode ? "Selected Site" : "Selected Group";
+    $("selectedName").textContent = selected?.name || currentId;
+  }
   $("testerSiteName").textContent = currentSite()?.name || "No site selected";
+  saveSelectedContext();
 }
 
 function selectSite(siteId) {
   state.currentSiteId = siteId;
   state.sessionId = "";
-  syncSiteChooser();
+  $("toggleSitesBtn").classList.add("active");
+  $("toggleGroupsBtn").classList.remove("active");
+  state.logPage = 0;
+  syncSelectionBar();
   $("testMessages").innerHTML = "";
   const activeTab = document.querySelector(".nav-item.active")?.dataset.tab;
   if (activeTab === "tester") loadTesterSession();
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
   prefillSettings();
   renderSnippet();
 }
 
-async function refreshFaqs() {
-  // Show cached version immediately
-  const cached = Cache.get(`faqs:${state.currentSiteId}`);
-  if (cached) { state.faqs = cached; renderFaqs(); }
+function selectGroup(groupId) {
+  state.currentGroupId = groupId;
+  state.sessionId = "";
+  $("toggleGroupsBtn").classList.add("active");
+  $("toggleSitesBtn").classList.remove("active");
+  state.logPage = 0;
+  syncSelectionBar();
+  $("testMessages").innerHTML = "";
+  refreshContextData();
+  prefillSettings();
+  renderSnippet();
+}
 
-  const params = new URLSearchParams({ site_id: state.currentSiteId });
-  
+async function refreshContextData({ force = false } = {}) {
+  if (force) clearCurrentContextCache();
+  setStatus(`${force ? "Refreshing" : "Loading"} ${contextDisplayName()}...`);
+  await refreshAnalytics({ force });
+  await Promise.all([refreshFaqs({ force }), refreshLogs({ force })]);
+  setStatus("System Ready");
+}
+
+function openSelectionModal() {
+  const siteMode = isSiteMode();
+  $("selectionModalTitle").textContent = siteMode ? "Select Site" : "Select Group";
+  $("selectionSearch").value = "";
+  renderSelectionList();
+  $("selectionModal").showModal();
+}
+
+function renderSelectionList() {
+  const siteMode = isSiteMode();
+  const query = $("selectionSearch").value.trim().toLowerCase();
+  let items = siteMode ? state.sites : state.groups;
+  if (query) {
+    items = items.filter((item) => [item.name, item.id, item.domain, item.description].filter(Boolean).some((value) => String(value).toLowerCase().includes(query)));
+  }
+  const currentId = siteMode ? state.currentSiteId : state.currentGroupId;
+  $("selectionList").innerHTML = items.length
+    ? items.map((item) => `
+      <div class="selection-item ${item.id === currentId ? "active" : ""}" onclick="handleSelectionClick('${esc(item.id)}')">
+        <div>
+          <strong>${esc(item.name)}</strong>
+          <p class="muted">${esc(item.id)}</p>
+        </div>
+      </div>`).join("")
+    : `<div class="empty-state"><p>No ${siteMode ? "sites" : "groups"} found.</p></div>`;
+  lucide.createIcons();
+}
+
+window.handleSelectionClick = function handleSelectionClick(id) {
+  if (isSiteMode()) selectSite(id);
+  else selectGroup(id);
+  $("selectionModal").close();
+};
+
+async function refreshFaqs({ force = false } = {}) {
+  const params = currentContextParams();
+  if (!params.toString()) {
+    state.faqs = [];
+    renderFaqs();
+    return;
+  }
+  // Show cached version immediately
+  const contextKey = currentContextKey();
+  const cached = force ? null : Cache.get(`faqs:${contextKey}`);
+  if (cached) { state.faqs = cached; renderFaqs(); }
+  else { state.faqs = []; renderFaqLoading(); setStatus(`Retrieving FAQs for ${contextDisplayName()}...`); }
+
   try {
     state.faqs = await api(`/api/faqs?${params.toString()}`);
-    Cache.set(`faqs:${state.currentSiteId}`, state.faqs);
+    Cache.set(`faqs:${contextKey}`, state.faqs);
     renderFaqs();
   } catch (error) { console.error("FAQ refresh failed", error); }
 }
@@ -295,19 +486,27 @@ function renderFaqs() {
   lucide.createIcons();
 }
 
-async function refreshLogs() {
+async function refreshLogs({ force = false } = {}) {
+  const contextParams = currentContextParams();
+  if (!contextParams.toString()) {
+    state.logs = [];
+    state.logTotal = 0;
+    renderLogs();
+    renderRecentActivity();
+    return;
+  }
   // Show cached version immediately if on first page
+  const contextKey = currentContextKey();
   if (state.logPage === 0) {
-    const cached = Cache.get(`logs:${state.currentSiteId}`);
+    const cached = force ? null : Cache.get(`logs:${contextKey}`);
     if (cached) { state.logs = cached; renderLogs(); renderRecentActivity(); }
+    else { state.logs = []; renderLogLoading(); setStatus(`Retrieving logs for ${contextDisplayName()}...`); }
   }
 
   const offset = state.logPage * state.logLimit;
-  const p = new URLSearchParams({ 
-    site_id: state.currentSiteId, 
-    limit: String(state.logLimit),
-    offset: String(offset)
-  });
+  const p = currentContextParams();
+  p.set("limit", String(state.logLimit));
+  p.set("offset", String(offset));
   if ($("logTypeFilter").value) p.set("response_type", $("logTypeFilter").value);
   if ($("logDateFilter").value) p.set("since", $("logDateFilter").value);
   
@@ -319,7 +518,7 @@ async function refreshLogs() {
     state.logs = res.logs || [];
     state.logTotal = res.total || 0;
     
-    if (state.logPage === 0) Cache.set(`logs:${state.currentSiteId}`, state.logs);
+    if (state.logPage === 0) Cache.set(`logs:${contextKey}`, state.logs);
     
     // Update total count UI
     if ($("logTotalCount")) $("logTotalCount").textContent = state.logTotal;
@@ -392,7 +591,7 @@ function renderRecentActivity() {
         <div class="muted" style="font-size: 11px;">${new Date(log.timestamp).toLocaleDateString()}</div>
       </td>
       <td>
-        <div style="font-weight: 600;">${esc(log.response_type === 'faq_hit' ? 'FAQ Answered' : log.response_type === 'llm_fallback' ? 'AI Fallback' : 'Helpline Escaped')}</div>
+        <div style="font-weight: 600;">${esc(log.response_type === 'faq_hit' ? 'FAQ Answered' : log.response_type === 'llm_fallback' ? 'Legacy Fallback' : 'Helpline Escaped')}</div>
         ${log.vector_distance != null ? `
           <div class="distance-pill pill-xs" style="margin-top: 4px;">
             ${log.vector_distance.toFixed(3)}
@@ -406,21 +605,33 @@ function renderRecentActivity() {
       </td>
       <td>
         <span class="status-badge status-${log.response_type === 'faq_hit' ? 'hit' : log.response_type === 'llm_fallback' ? 'fallback' : 'helpline'}">
-          ${esc(log.response_type === 'faq_hit' ? 'Answered' : log.response_type === 'llm_fallback' ? 'AI Generated' : 'Escaped')}
+          ${esc(log.response_type === 'faq_hit' ? 'Answered' : log.response_type === 'llm_fallback' ? 'Legacy' : 'Escaped')}
         </span>
       </td>
     </tr>
   `).join("") : '<tr><td colspan="4" class="muted" style="text-align: center; padding: 40px;">No recent activity</td></tr>';
 }
 
-async function refreshAnalytics() {
+async function refreshAnalytics({ force = false } = {}) {
+  const contextParams = currentContextParams();
+  if (!contextParams.toString()) {
+    renderAnalytics({ total_queries: 0, hit_rate: 0, faq_hits: 0, llm_rate: 0, llm_fallbacks: 0, helpline_rate: 0 });
+    return;
+  }
   // Show cached version immediately
-  const cached = Cache.get(`analytics:${state.currentSiteId}`);
+  const contextKey = currentContextKey();
+  const cached = force ? null : Cache.get(`analytics:${contextKey}`);
   if (cached) renderAnalytics(cached);
+  else {
+    renderAnalytics({ total_queries: 0, hit_rate: 0, faq_hits: 0, llm_rate: 0, llm_fallbacks: 0, helpline_rate: 0 });
+    setStatus(`Retrieving analytics for ${contextDisplayName()}...`);
+  }
 
   try {
-    const data = await api(`/api/sites/${state.currentSiteId}/analytics`);
-    Cache.set(`analytics:${state.currentSiteId}`, data);
+    const data = isSiteMode()
+      ? await api(`/api/sites/${state.currentSiteId}/analytics`)
+      : await api(`/api/groups/${state.currentGroupId}/analytics`);
+    Cache.set(`analytics:${contextKey}`, data);
     renderAnalytics(data);
   } catch (error) { console.error("Analytics refresh failed", error); }
 }
@@ -477,7 +688,7 @@ function renderMainCharts(data) {
   state.charts.donut = new Chart(donutCtx, {
     type: 'doughnut',
     data: {
-      labels: ['FAQ Hit', 'AI Fallback', 'Helpline'],
+      labels: ['FAQ Hit', 'Legacy Fallback', 'Helpline'],
       datasets: [{
         data: [data.faq_hits, data.llm_fallbacks, Math.round(data.total_queries * data.helpline_rate / 100)],
         backgroundColor: ['#10b981', '#ea580c', '#2563eb'],
@@ -574,7 +785,11 @@ function selectedCheckboxValues(name) { return [...document.querySelectorAll(`in
 
 function prefillSettings() {
   const site = currentSite();
-  if (!site) return;
+  if (!site) {
+    $("settingsForm")?.reset();
+    if ($("snippetCode")) $("snippetCode").textContent = "Select a site to configure widget settings.";
+    return;
+  }
   $("setName").value = site.name || "";
   $("setDomain").value = site.domain || "";
   $("setHelpline").value = site.helpline_number || "";
@@ -593,7 +808,10 @@ function prefillSettings() {
 }
 
 function renderSnippet(targetId = "snippetCode") {
-  if (!state.currentSiteId && targetId === "snippetCode") return;
+  if (!state.currentSiteId && targetId === "snippetCode") {
+    $(targetId).textContent = "Select a site to generate the widget snippet.";
+    return;
+  }
   const origin = window.location.origin;
   const siteId = targetId === "snippetCode" ? state.currentSiteId : state.lastRegisteredSiteId;
   $(targetId).textContent = `<!-- FAQ Chatbot Widget -->\n<script src="${origin}/widget/chatbot-widget.js" data-site-id="${siteId}" data-api-base="${origin}"></script>`;
@@ -788,7 +1006,7 @@ function loadTesterSession() {
 function clearTesterSession() {
   if (state.currentSiteId && state.testerSessions[state.currentSiteId]) {
     delete state.testerSessions[state.currentSiteId];
-    sessionStorage.setItem('testerSessions', JSON.stringify(state.testerSessions));
+    saveTesterSessions();
   }
   state.sessionId = "";
   $("testMessages").innerHTML = "";
@@ -796,6 +1014,11 @@ function clearTesterSession() {
 }
 
 async function startTestingSession() {
+  if (!state.currentSiteId) {
+    $("testMessages").innerHTML = "";
+    addMessage("bot", "Select a site to start a tester session.");
+    return;
+  }
   if (state.sessionId) return;
   try {
     const session = await api("/api/chat/sessions", { 
@@ -808,8 +1031,8 @@ async function startTestingSession() {
       }) 
     });
     state.sessionId = session.id;
-    state.testerSessions[state.currentSiteId] = { id: session.id, messages: [] };
-    sessionStorage.setItem('testerSessions', JSON.stringify(state.testerSessions));
+    state.testerSessions[state.currentSiteId] = { id: session.id, messages: [], updatedAt: Date.now() };
+    saveTesterSessions();
     $("testMessages").innerHTML = "";
     
     const welcome = currentSite()?.welcome_message || `Hello! I'm the assistant for ${currentSite()?.name || state.currentSiteId}. How can I help you today?`;
@@ -854,11 +1077,36 @@ $("registerForm").addEventListener("submit", async (event) => {
 $("logoutBtn").addEventListener("click", () => { 
   auth.signOut(); 
   localStorage.removeItem("portal_session"); 
-  sessionStorage.clear();
+  localStorage.removeItem(TESTER_SESSIONS_KEY);
   Cache.clear();
   showLogin(); 
 });
-$("siteChooser").addEventListener("change", () => { const id = idFromChooser($("siteChooser").value, state.sites); if (id) selectSite(id); });
+$("toggleSitesBtn").addEventListener("click", () => {
+  $("toggleSitesBtn").classList.add("active");
+  $("toggleGroupsBtn").classList.remove("active");
+  if (!state.currentSiteId && state.sites.length) state.currentSiteId = state.sites[0].id;
+  state.logPage = 0;
+  syncSelectionBar();
+  refreshContextData();
+  prefillSettings();
+  renderSnippet();
+});
+$("toggleGroupsBtn").addEventListener("click", () => {
+  if (!state.groups.length) return;
+  $("toggleGroupsBtn").classList.add("active");
+  $("toggleSitesBtn").classList.remove("active");
+  if (!state.currentGroupId && state.groups.length) state.currentGroupId = state.groups[0].id;
+  state.logPage = 0;
+  syncSelectionBar();
+  refreshContextData();
+  prefillSettings();
+  renderSnippet();
+});
+$("refreshContextBtn")?.addEventListener("click", () => refreshContextData({ force: true }));
+$("openSwitchBtn").addEventListener("click", openSelectionModal);
+$("initialSelectBtn").addEventListener("click", openSelectionModal);
+$("closeSelectionModalBtn").addEventListener("click", () => $("selectionModal").close());
+$("selectionSearch").addEventListener("input", renderSelectionList);
 document.querySelectorAll(".nav-item").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
 $("createFaqBtn").addEventListener("click", () => { 
   $("faqId").value = ""; 
@@ -923,6 +1171,10 @@ $("closeSiteModalBtn").addEventListener("click", () => $("siteModal").close());
 
 $("settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (!state.currentSiteId) {
+    alert("Select a site before saving site settings.");
+    return;
+  }
   const payload = {
     name: $("setName").value.trim(),
     domain: $("setDomain").value.trim(),
@@ -944,7 +1196,7 @@ $("settingsForm").addEventListener("submit", async (e) => {
     const updated = await api(`/api/sites/${state.currentSiteId}`, { method: "PATCH", body: JSON.stringify(payload) });
     const idx = state.sites.findIndex(s => s.id === state.currentSiteId);
     if (idx !== -1) state.sites[idx] = updated;
-    syncSiteChooser();
+    syncSelectionBar();
     alert("Settings saved successfully");
   } catch (error) { alert(error.message); }
 });
@@ -975,14 +1227,14 @@ $("siteForm").addEventListener("submit", async (event) => {
     state.currentSiteId = created.id;
     $("siteModal").close();
     renderReferenceControls();
-    syncSiteChooser();
+    syncSelectionBar();
     selectSite(created.id);
   } catch (error) { alert(error.message); }
 });
 
 $("faqForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const groupId = idFromChooser($("faqTargetGroup").value, state.groups);
+  const groupId = idFromChooser($("faqTargetGroup").value, state.groups) || (!isSiteMode() ? state.currentGroupId : "");
   const payload = {
     question: $("faqQuestion").value.trim(),
     answer: $("faqAnswer").value.trim(),
@@ -1087,7 +1339,8 @@ $("testForm").addEventListener("submit", async (e) => {
     bot.querySelector(".bubble-text").textContent = response.answer;
     if (state.currentSiteId && state.testerSessions[state.currentSiteId]) {
       state.testerSessions[state.currentSiteId].messages.push({ type: "bot", text: response.answer });
-      sessionStorage.setItem('testerSessions', JSON.stringify(state.testerSessions));
+      state.testerSessions[state.currentSiteId].updatedAt = Date.now();
+      saveTesterSessions();
     }
     refreshLogs();
   } catch { 
@@ -1108,7 +1361,8 @@ function addMessage(type, text, skipSave = false) {
   
   if (!skipSave && state.currentSiteId && state.testerSessions[state.currentSiteId]) {
     state.testerSessions[state.currentSiteId].messages.push({ type, text });
-    sessionStorage.setItem('testerSessions', JSON.stringify(state.testerSessions));
+    state.testerSessions[state.currentSiteId].updatedAt = Date.now();
+    saveTesterSessions();
   }
   
   return wrapper;
@@ -1142,7 +1396,7 @@ window.showDistanceHelp = function(type) {
     review: {
       title: "FAQ Review Distance",
       body: `
-        <p>This is the <strong>"Safety Net"</strong> threshold. If the AI cannot generate a custom answer (because the question is too complex), it will check if any FAQ is closer than this value.</p>
+        <p>This is the <strong>"Safety Net"</strong> threshold. If no exact match exists, the bot checks whether the nearest FAQ is close enough to answer directly.</p>
         <h4>Behavior:</h4>
         <ul>
           <li>If a match is found within this distance, the bot shows that FAQ answer instead of falling back to the Helpline.</li>
@@ -1151,14 +1405,14 @@ window.showDistanceHelp = function(type) {
       `
     },
     candidate: {
-      title: "LLM Candidate Distance",
+      title: "Composite Candidate Distance",
       body: `
-        <p>This is the <strong>"AI Context"</strong> threshold. It determines how many FAQs the AI is allowed to read before trying to generate its own answer.</p>
+        <p>This threshold controls which nearby FAQs are eligible for composite answers when a user asks about multiple related things.</p>
         <h4>Behavior:</h4>
         <ul>
-          <li>Any FAQ closer than this value is sent to the AI as context.</li>
-          <li>If this value is too low, the AI won't have enough information to answer.</li>
-          <li>If it's too high, the AI might get confused by irrelevant FAQs.</li>
+          <li>Nearby FAQ answers can be assembled together when more than one match passes review distance.</li>
+          <li>If this value is too low, composite questions may fall back to one answer or the helpline.</li>
+          <li>If it's too high, unrelated FAQs may be included.</li>
         </ul>
         <h4>Recommended: <code>0.55</code> to <code>0.65</code></h4>
       `

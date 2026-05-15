@@ -11,6 +11,32 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+const Cache = {
+  get: (key) => {
+    try {
+      const item = localStorage.getItem(`admin-cache:${key}`);
+      if (!item) return null;
+      const { data, expiry } = JSON.parse(item);
+      if (Date.now() > expiry) {
+        localStorage.removeItem(`admin-cache:${key}`);
+        return null;
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  },
+  set: (key, data, ttl = 600000) => {
+    localStorage.setItem(`admin-cache:${key}`, JSON.stringify({ data, expiry: Date.now() + ttl }));
+  },
+  remove: (key) => localStorage.removeItem(`admin-cache:${key}`),
+  clear: () => {
+    Object.keys(localStorage).forEach((key) => key.startsWith("admin-cache:") && localStorage.removeItem(key));
+  },
+};
+
+const SELECTION_KEY = "admin:selectedContext";
+
 const firebaseConfig = {
   apiKey: "AIzaSyC1QxlKBkLpT2htParIuodhPNX6qtTGnlU",
   authDomain: "chatbot-faq-76909.firebaseapp.com",
@@ -29,6 +55,10 @@ let adminVerifiedUser = null;
 let authBootstrapped = false;
 let authGeneration = 0;
 let dashboardInitialized = false;
+
+if (!localStorage.getItem("admin_session")) {
+  showLogin();
+}
 
 function getSiteIdsFromClaims(claims = {}) {
   const raw = claims.site_ids || (claims.rbac && claims.rbac.site_ids) || [];
@@ -60,6 +90,7 @@ async function createHandoffAndRedirect(idToken) {
       adminVerifiedUser = null;
       dashboardInitialized = false;
       localStorage.removeItem("admin_session");
+      Cache.clear();
       $("userEmail").textContent = "";
       $("logoutBtn").style.display = "none";
       showLogin();
@@ -88,6 +119,7 @@ async function createHandoffAndRedirect(idToken) {
       adminVerifiedUser = null;
       dashboardInitialized = false;
       localStorage.removeItem("admin_session");
+      Cache.clear();
       showLogin();
       $("loginError").textContent = error.message || "Authentication failed.";
     }
@@ -97,6 +129,7 @@ async function createHandoffAndRedirect(idToken) {
 function initAdminDashboard() {
   if (!adminVerifiedUser || dashboardInitialized) return;
   dashboardInitialized = true;
+  hydrateAdminFromCache();
   refreshAll();
 }
 
@@ -206,6 +239,13 @@ function showToast(message, type = "info", duration = 3000) {
   };
 }
 
+function finishToast(toast, message, type = "success", duration = 2500) {
+  if (!toast) return showToast(message, type, duration);
+  toast.update(message, type);
+  setTimeout(() => toast.close(), duration);
+  return toast;
+}
+
 function esc(value = "") {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -216,6 +256,79 @@ function esc(value = "") {
 
 function currentSite() {
   return state.sites.find((site) => site.id === state.currentSiteId);
+}
+
+function currentGroup() {
+  return state.groups.find((group) => group.id === state.currentGroupId);
+}
+
+function isSiteMode() {
+  return $("toggleSitesBtn")?.classList.contains("active") !== false;
+}
+
+function currentContextKey() {
+  return isSiteMode() ? `site:${state.currentSiteId}` : `group:${state.currentGroupId}`;
+}
+
+function contextDisplayName() {
+  return isSiteMode()
+    ? (currentSite()?.name || state.currentSiteId || "site")
+    : (currentGroup()?.name || state.currentGroupId || "group");
+}
+
+function saveSelectedContext() {
+  const mode = isSiteMode() ? "site" : "group";
+  const id = mode === "site" ? state.currentSiteId : state.currentGroupId;
+  if (id) {
+    localStorage.setItem(SELECTION_KEY, JSON.stringify({
+      mode,
+      id,
+      siteId: state.currentSiteId,
+      groupId: state.currentGroupId,
+    }));
+  }
+}
+
+function restoreSelectedContext() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SELECTION_KEY) || "null");
+    const savedSiteId = saved?.siteId || (saved?.mode === "site" ? saved.id : "");
+    const savedGroupId = saved?.groupId || (saved?.mode === "group" ? saved.id : "");
+    if (savedSiteId && state.sites.some((site) => site.id === savedSiteId && !site.deleted_at)) {
+      state.currentSiteId = savedSiteId;
+    }
+    if (savedGroupId && state.groups.some((group) => group.id === savedGroupId)) {
+      state.currentGroupId = savedGroupId;
+    }
+    if (saved?.mode === "group" && state.currentGroupId) {
+      $("toggleGroupsBtn")?.classList.add("active");
+      $("toggleSitesBtn")?.classList.remove("active");
+      return;
+    }
+    if (saved?.mode === "site" && state.currentSiteId) {
+      $("toggleSitesBtn")?.classList.add("active");
+      $("toggleGroupsBtn")?.classList.remove("active");
+      return;
+    }
+  } catch {}
+  if (!state.currentSiteId && !state.currentGroupId && state.sites.some((site) => !site.deleted_at)) {
+    state.currentSiteId = state.sites.find((site) => !site.deleted_at).id;
+    $("toggleSitesBtn")?.classList.add("active");
+    $("toggleGroupsBtn")?.classList.remove("active");
+  }
+}
+
+function clearCurrentContextCache() {
+  const contextKey = currentContextKey();
+  ["faqs", "logs", "analytics"].forEach((type) => Cache.remove(`${type}:${contextKey}`));
+}
+
+function renderFaqLoading() {
+  if ($("faqsList")) $("faqsList").innerHTML = `<p class="meta">Retrieving knowledge base...</p>`;
+}
+
+function renderLogLoading() {
+  if ($("logsList")) $("logsList").innerHTML = `<p class="meta">Retrieving conversation logs...</p>`;
 }
 
 function siteDisplay(site) {
@@ -262,17 +375,43 @@ async function refreshAll() {
     state.principal = me;
     state.sites = sites;
     state.groups = groups;
+    Cache.set("me", me);
+    Cache.set("sites", sites);
+    Cache.set("groups", groups);
+    restoreSelectedContext();
     renderReferenceControls();
     renderSites();
     renderGroups();
     renderUserSites();
     syncChoosers();
-    refreshFaqs();
-    refreshLogs();
-    refreshAnalytics();
+    refreshContextData();
   } catch (error) {
     setStatus(`Refresh failed: ${error.message}`);
   }
+}
+
+function hydrateAdminFromCache() {
+  const me = Cache.get("me");
+  const sites = Cache.get("sites");
+  const groups = Cache.get("groups");
+  if (!me || !sites || !groups) return;
+  state.principal = me;
+  state.sites = sites;
+  state.groups = groups;
+  restoreSelectedContext();
+  renderReferenceControls();
+  renderSites();
+  renderGroups();
+  renderUserSites();
+  syncChoosers();
+  const contextKey = currentContextKey();
+  state.faqs = Cache.get(`faqs:${contextKey}`) || [];
+  state.logs = Cache.get(`logs:${contextKey}`) || [];
+  if (state.faqs.length) renderFaqs();
+  if (state.logs.length) renderLogs();
+  const cachedAnalytics = Cache.get(`analytics:${contextKey}`);
+  if (cachedAnalytics) renderAnalytics(cachedAnalytics);
+  setStatus("System Ready (Cached)");
 }
 
 function syncChoosers() {
@@ -298,6 +437,7 @@ function syncChoosers() {
     }
   }
   updateTesterSiteName();
+  saveSelectedContext();
 }
 
 function renderReferenceControls() {
@@ -311,8 +451,8 @@ function renderReferenceControls() {
 }
 
 function filteredSites() {
-  const query = $("siteSearch").value.trim().toLowerCase();
-  const filter = $("siteFilter").value;
+  const query = $("siteSearch")?.value?.trim().toLowerCase() || "";
+  const filter = $("siteFilter")?.value || "active";
   return state.sites
     .filter((site) => {
       if (filter === "active" && site.deleted_at) return false;
@@ -348,15 +488,15 @@ function renderSites() {
 }
 
 function groupMatches(group) {
-  const query = $("groupSearch").value.trim().toLowerCase();
+  const query = $("groupSearch")?.value?.trim().toLowerCase() || "";
   if (!query) return true;
   const siteNames = group.site_ids.map((id) => state.sites.find((site) => site.id === id)?.name || id).join(" ");
   return [group.name, group.id, group.description, siteNames].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
 }
 
 function renderGroups() {
-  $("groupSiteChecks").innerHTML = siteCheckboxes("groupSite", selectedCheckboxValues("groupSite"), $("groupSiteSearch").value);
-  const filter = $("groupFilter").value;
+  $("groupSiteChecks").innerHTML = siteCheckboxes("groupSite", selectedCheckboxValues("groupSite"), $("groupSiteSearch")?.value || "");
+  const filter = $("groupFilter")?.value || "latest";
   const groups = state.groups.filter(groupMatches).sort((a, b) => {
     const timeA = new Date(a.updated_at || a.created_at).getTime();
     const timeB = new Date(b.updated_at || b.created_at).getTime();
@@ -399,10 +539,10 @@ function selectedCheckboxValues(name) {
 }
 
 function renderUserSites() {
-  $("userSiteChecks").innerHTML = siteCheckboxes("userSite", selectedCheckboxValues("userSite"), $("userSiteSearch").value);
+  $("userSiteChecks").innerHTML = siteCheckboxes("userSite", selectedCheckboxValues("userSite"), $("userSiteSearch")?.value || "");
 }
 
-async function refreshFaqs() {
+async function refreshFaqs({ force = false } = {}) {
   const isSite = $("toggleSitesBtn").classList.contains("active");
   const currentId = isSite ? state.currentSiteId : state.currentGroupId;
 
@@ -416,9 +556,21 @@ async function refreshFaqs() {
   if (isSite) params.set("site_id", currentId);
   else params.set("group_id", currentId);
 
+  const contextKey = currentContextKey();
+  const cached = force ? null : Cache.get(`faqs:${contextKey}`);
+  if (cached) {
+    state.faqs = cached;
+    renderFaqs();
+  } else {
+    state.faqs = [];
+    renderFaqLoading();
+    setStatus(`Retrieving FAQs for ${contextDisplayName()}...`);
+  }
+
   try {
     const faqs = await api(`/api/faqs?${params.toString()}`);
     state.faqs = faqs;
+    Cache.set(`faqs:${contextKey}`, faqs);
     renderFaqs();
   } catch (err) {
     state.faqs = [];
@@ -456,7 +608,7 @@ function renderFaqs() {
     : `<p class="meta">No FAQs found.</p>`;
 }
 
-async function refreshLogs() {
+async function refreshLogs({ force = false } = {}) {
   const isSite = $("toggleSitesBtn").classList.contains("active");
   const currentId = isSite ? state.currentSiteId : state.currentGroupId;
 
@@ -475,9 +627,21 @@ async function refreshLogs() {
   if (type) params.set("type", type);
   if (dateRange) params.set("date_range", dateRange);
 
+  const contextKey = currentContextKey();
+  const cached = force ? null : Cache.get(`logs:${contextKey}`);
+  if (cached) {
+    state.logs = cached;
+    renderLogs();
+  } else {
+    state.logs = [];
+    renderLogLoading();
+    setStatus(`Retrieving logs for ${contextDisplayName()}...`);
+  }
+
   try {
-    const logs = await api(`/api/logs?${params.toString()}`);
-    state.logs = logs;
+    const response = await api(`/api/logs?${params.toString()}`);
+    state.logs = Array.isArray(response) ? response : (response?.logs || []);
+    Cache.set(`logs:${contextKey}`, state.logs);
     renderLogs();
   } catch (err) {
     state.logs = [];
@@ -502,66 +666,75 @@ function renderLogs() {
     : `<p class="meta">No logs found.</p>`;
 }
 
-async function refreshAnalytics() {
+async function refreshAnalytics({ force = false } = {}) {
   const isSite = $("toggleSitesBtn").classList.contains("active");
   const currentId = isSite ? state.currentSiteId : state.currentGroupId;
-
-  const resetStats = () => {
-    if ($("statTotal")) $("statTotal").textContent = "0";
-    if ($("statHitRate")) $("statHitRate").textContent = "0%";
-    if ($("statFaqHits")) $("statFaqHits").textContent = "0 hits";
-    if ($("statLlmRate")) $("statLlmRate").textContent = "0%";
-    if ($("statLlmHits")) $("statLlmHits").textContent = "0 fallbacks";
-    if ($("statHelplineRate")) $("statHelplineRate").textContent = "0%";
-    if ($("topFaqsList")) $("topFaqsList").innerHTML = "";
-  };
-
   if (!currentId) {
     resetStats();
     return;
+  }
+
+  const contextKey = currentContextKey();
+  const cached = force ? null : Cache.get(`analytics:${contextKey}`);
+  if (cached) renderAnalytics(cached);
+  else {
+    resetStats();
+    setStatus(`Retrieving analytics for ${contextDisplayName()}...`);
   }
 
   const url = isSite ? `/api/sites/${currentId}/analytics` : `/api/groups/${currentId}/analytics`;
 
   try {
     const data = await api(url);
-    if ($("statTotal")) $("statTotal").textContent = data.total_queries || 0;
-    if ($("statHitRate")) $("statHitRate").textContent = `${data.hit_rate || 0}%`;
-    if ($("statFaqHits")) $("statFaqHits").textContent = `${data.faq_hits || 0} hits`;
-    if ($("statLlmRate")) $("statLlmRate").textContent = `${data.llm_rate || 0}%`;
-    if ($("statLlmHits")) $("statLlmHits").textContent = `${data.llm_fallbacks || 0} fallbacks`;
-    if ($("statHelplineRate")) $("statHelplineRate").textContent = `${data.helpline_rate || 0}%`;
-    
-    if ($("topFaqsList")) {
-      $("topFaqsList").innerHTML = data.top_faqs?.length
-        ? data.top_faqs.map((faq) => `<div class="row"><p class="row-title">${esc(faq.question)}</p><div class="meta">${faq.count} uses</div><div></div></div>`).join("")
-        : `<p class="meta">No FAQs used yet.</p>`;
-    }
+    Cache.set(`analytics:${contextKey}`, data);
+    renderAnalytics(data);
   } catch (err) {
     console.error(err);
     resetStats();
   }
 }
 
+function resetStats() {
+  renderAnalytics({ total_queries: 0, hit_rate: 0, faq_hits: 0, llm_rate: 0, llm_fallbacks: 0, helpline_rate: 0, top_faqs: [] });
+}
+
+function renderAnalytics(data) {
+  if ($("statTotal")) $("statTotal").textContent = data.total_queries || 0;
+  if ($("statHitRate")) $("statHitRate").textContent = `${data.hit_rate || 0}%`;
+  if ($("statFaqHits")) $("statFaqHits").textContent = `${data.faq_hits || 0} hits`;
+  if ($("statLlmRate")) $("statLlmRate").textContent = `${data.llm_rate || 0}%`;
+  if ($("statLlmHits")) $("statLlmHits").textContent = `${data.llm_fallbacks || 0} fallbacks`;
+  if ($("statHelplineRate")) $("statHelplineRate").textContent = `${data.helpline_rate || 0}%`;
+
+  if ($("topFaqsList")) {
+    $("topFaqsList").innerHTML = data.top_faqs?.length
+      ? data.top_faqs.map((faq) => `<div class="row"><p class="row-title">${esc(faq.question)}</p><div class="meta">${faq.count} uses</div><div></div></div>`).join("")
+      : `<p class="meta">No FAQs used yet.</p>`;
+  }
+}
+
+async function refreshContextData({ force = false } = {}) {
+  if (force) clearCurrentContextCache();
+  setStatus(`${force ? "Refreshing" : "Loading"} ${contextDisplayName()}...`);
+  await refreshAnalytics({ force });
+  await Promise.all([refreshFaqs({ force }), refreshLogs({ force })]);
+  setStatus("System Ready");
+}
+
 function selectSite(siteId) {
   state.currentSiteId = siteId;
-  state.currentGroupId = "";
   state.sessionId = "";
   syncChoosers();
   $("testMessages").innerHTML = "";
   $("leadForm").classList.remove("hidden");
   $("testForm").classList.add("hidden");
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
 }
 
 function selectGroup(groupId) {
   state.currentGroupId = groupId;
-  state.currentSiteId = "";
-  $("faqSiteChooser").value = "";
-  $("faqGroupChooser").value = groupDisplay(state.groups.find((group) => group.id === groupId));
-  refreshFaqs();
+  syncChoosers();
+  refreshContextData();
 }
 
 window.editSite = function editSite(siteId) {
@@ -640,14 +813,16 @@ window.editGroup = function editGroup(groupId) {
 window.deleteGroup = async function deleteGroup(groupId) {
   if (!confirm("Delete this group?")) return;
   const previous = [...state.groups];
+  const toast = showToast("Deleting group...", "loading", 0);
   state.groups = state.groups.filter((group) => group.id !== groupId);
   renderGroups();
   try {
     await api(`/api/groups/${groupId}`, { method: "DELETE" });
+    finishToast(toast, "Group deleted", "success");
   } catch (error) {
     state.groups = previous;
     renderGroups();
-    alert(`Delete failed: ${error.message}`);
+    finishToast(toast, `Delete failed: ${error.message}`, "error", 3500);
   }
 };
 
@@ -714,18 +889,19 @@ $("faqDeleteBtn").addEventListener("click", async () => {
   if (!faqId) return;
   
   const previous = [...state.faqs];
+  const toast = showToast("Deleting FAQ...", "loading", 0);
   state.faqs = state.faqs.filter((f) => f.id !== faqId);
   renderFaqs();
   $("faqModal").close();
 
   try {
     await api(`/api/faqs/${faqId}`, { method: "DELETE" });
-    showToast("FAQ deleted", "success");
+    finishToast(toast, "FAQ deleted", "success");
     refreshAnalytics();
   } catch (error) {
     state.faqs = previous;
     renderFaqs();
-    showToast(error.message, "error");
+    finishToast(toast, error.message, "error", 3500);
   }
 });
 
@@ -774,6 +950,7 @@ $("faqForm").addEventListener("submit", async (event) => {
   const previous = [...state.faqs];
   $("faqModal").close();
   $("faqForm").reset();
+  const toast = showToast(faqId ? "Saving FAQ..." : "Creating FAQ...", "loading", 0);
 
   try {
     if (faqId) {
@@ -790,11 +967,11 @@ $("faqForm").addEventListener("submit", async (event) => {
       state.faqs = state.faqs.map((f) => (f.id === temp.id ? created : f));
     }
     renderFaqs();
-    showToast("FAQ saved!", "success");
+    finishToast(toast, "FAQ saved", "success");
   } catch (error) {
     state.faqs = previous;
     renderFaqs();
-    showToast(error.message, "error");
+    finishToast(toast, error.message, "error", 3500);
   }
 });
 
@@ -830,6 +1007,7 @@ $("logoutBtn").addEventListener("click", () => {
   dashboardInitialized = false;
   auth.signOut();
   localStorage.removeItem("admin_session");
+  Cache.clear();
   showLogin();
 });
 
@@ -850,20 +1028,19 @@ $("logSearch") && $("logSearch").addEventListener("input", renderLogs);
 $("toggleSitesBtn").addEventListener("click", () => {
   $("toggleSitesBtn").classList.add("active");
   $("toggleGroupsBtn").classList.remove("active");
+  if (!state.currentSiteId && state.sites.some((site) => !site.deleted_at)) state.currentSiteId = state.sites.find((site) => !site.deleted_at).id;
   syncChoosers();
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
 });
 
 $("toggleGroupsBtn").addEventListener("click", () => {
   $("toggleGroupsBtn").classList.add("active");
   $("toggleSitesBtn").classList.remove("active");
+  if (!state.currentGroupId && state.groups.length) state.currentGroupId = state.groups[0].id;
   syncChoosers();
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
 });
+$("refreshContextBtn")?.addEventListener("click", () => refreshContextData({ force: true }));
 
 $("openSwitchBtn").addEventListener("click", openSelectionModal);
 $("initialSelectBtn").addEventListener("click", openSelectionModal);
@@ -913,20 +1090,14 @@ window.handleSelectionClick = function(id) {
 
 function selectSite(id) {
   state.currentSiteId = id;
-  state.currentGroupId = "";
   syncChoosers();
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
 }
 
 function selectGroup(id) {
   state.currentGroupId = id;
-  state.currentSiteId = "";
   syncChoosers();
-  refreshFaqs();
-  refreshLogs();
-  refreshAnalytics();
+  refreshContextData();
 }
 
 document.querySelectorAll(".tab").forEach((button) => button.addEventListener("click", () => switchTab(button.dataset.tab)));
@@ -947,6 +1118,7 @@ $("siteForm").addEventListener("submit", async (event) => {
   const payload = sitePayload();
   const previous = [...state.sites];
   $("siteForm").reset();
+  const toast = showToast(siteId ? "Saving site..." : "Creating site...", "loading", 0);
 
   try {
     if (siteId) {
@@ -970,47 +1142,74 @@ $("siteForm").addEventListener("submit", async (event) => {
     renderSites();
     renderUserSites();
     syncChoosers();
+    finishToast(toast, siteId ? "Site saved" : "Site created", "success");
   } catch (error) {
     state.sites = previous;
     renderSites();
-    alert(`Save failed: ${error.message}`);
+    finishToast(toast, `Save failed: ${error.message}`, "error", 3500);
   }
 });
 
 $("repairSiteBtn").addEventListener("click", async () => {
   const siteId = $("siteId").value;
-  if (!siteId || !confirm("Repair vectors for this site?")) return;
-  const result = await api(`/api/sites/${siteId}/reindex`, { method: "POST" });
-  alert(`Reindexed ${result.total_items ?? 0} FAQs.`);
+  if (!siteId) return;
+  $("siteModal").close();
+  const toast = showToast("Repairing vectors...", "loading", 0);
+  try {
+    const result = await api(`/api/sites/${siteId}/reindex`, { method: "POST" });
+    finishToast(toast, `Repair started: ${result.total_items ?? 0} FAQs will be reindexed in the background`, "success", 5000);
+  } catch (error) {
+    finishToast(toast, `Repair failed: ${error.message}`, "error", 5000);
+  }
+});
+
+$("deleteSiteBtn").addEventListener("click", async () => {
+  const siteId = $("siteId").value;
+  if (!siteId) return;
+  $("siteModal").close();
+  const previous = [...state.sites];
+  const toast = showToast("Deleting site...", "loading", 0);
+  state.sites = state.sites.map((s) => (s.id === siteId ? { ...s, deleted_at: new Date().toISOString() } : s));
+  renderSites();
+  try {
+    await api(`/api/sites/${siteId}`, { method: "DELETE" });
+    finishToast(toast, "Site deleted", "success");
+  } catch (error) {
+    state.sites = previous;
+    renderSites();
+    finishToast(toast, error.message, "error", 3500);
+  }
 });
 
 window.deleteSite = async function deleteSite(siteId) {
   if (!confirm("Delete this site? It will be moved to Recently Deleted.")) return;
   const previous = [...state.sites];
+  const toast = showToast("Deleting site...", "loading", 0);
   state.sites = state.sites.map((s) => (s.id === siteId ? { ...s, deleted_at: new Date().toISOString() } : s));
   renderSites();
   try {
     await api(`/api/sites/${siteId}`, { method: "DELETE" });
-    showToast("Site deleted", "success");
+    finishToast(toast, "Site deleted", "success");
   } catch (error) {
     state.sites = previous;
     renderSites();
-    showToast(error.message, "error");
+    finishToast(toast, error.message, "error", 3500);
   }
 };
 
 window.deleteGroup = async function deleteGroup(groupId) {
   if (!confirm("Delete this group?")) return;
   const previous = [...state.groups];
+  const toast = showToast("Deleting group...", "loading", 0);
   state.groups = state.groups.filter((g) => g.id !== groupId);
   renderGroups();
   try {
     await api(`/api/groups/${groupId}`, { method: "DELETE" });
-    showToast("Group deleted", "success");
+    finishToast(toast, "Group deleted", "success");
   } catch (error) {
     state.groups = previous;
     renderGroups();
-    showToast(error.message, "error");
+    finishToast(toast, error.message, "error", 3500);
   }
 };
 
@@ -1026,6 +1225,7 @@ $("groupForm").addEventListener("submit", async (event) => {
   };
   const previous = [...state.groups];
   $("groupForm").reset();
+  const toast = showToast(groupId ? "Saving group..." : "Creating group...", "loading", 0);
 
   try {
     if (groupId && state.groups.some((group) => group.id === groupId)) {
@@ -1043,10 +1243,11 @@ $("groupForm").addEventListener("submit", async (event) => {
     }
     renderReferenceControls();
     renderGroups();
+    finishToast(toast, groupId ? "Group saved" : "Group created", "success");
   } catch (error) {
     state.groups = previous;
     renderGroups();
-    alert(`Save failed: ${error.message}`);
+    finishToast(toast, `Save failed: ${error.message}`, "error", 3500);
   }
 });
 
@@ -1056,9 +1257,10 @@ $("userForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const site_ids = selectedCheckboxValues("userSite");
   if (!site_ids.length) {
-    alert("Select at least one site.");
+    showToast("Select at least one site.", "error");
     return;
   }
+  const toast = showToast("Creating user...", "loading", 0);
   try {
     const result = await api("/api/users", {
       method: "POST",
@@ -1068,11 +1270,11 @@ $("userForm").addEventListener("submit", async (event) => {
         site_ids,
       }),
     });
-    alert(result.message);
+    finishToast(toast, result.message || "User created", "success");
     event.target.reset();
     renderUserSites();
   } catch (error) {
-    alert(`Failed to create user: ${error.message}`);
+    finishToast(toast, `Failed to create user: ${error.message}`, "error", 3500);
   }
 });
 

@@ -44,9 +44,14 @@ def portal_redirect():
     return RedirectResponse(url="/portal/")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    from fastapi import Response
+    return Response(status_code=204)
+
+
 @app.get("/debug-portal")
 def debug_portal():
-    import os
     p = Path(__file__).resolve().parent / "static" / "portal"
     return {
         "path": str(p),
@@ -60,6 +65,6 @@ def health():
     return {
         "ok": True,
         "storageBackend": settings.storage_backend,
-        "llmEnabled": bool(settings.gemini_api_key),
+        "embeddingProvider": "openai" if settings.openai_api_key else "gemini" if settings.gemini_api_key else "local",
         "firebaseCredentials": firebase_credentials_status(),
     }

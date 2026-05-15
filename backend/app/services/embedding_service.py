@@ -30,7 +30,7 @@ def _load_httpx():
     try:
         import httpx
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("Install httpx to use Gemini embeddings.") from exc
+        raise RuntimeError("Install httpx to use hosted embeddings.") from exc
     return httpx
 
 
@@ -170,8 +170,108 @@ class GeminiEmbeddingService(EmbeddingService):
         return values
 
 
+@dataclass
+class OpenAIEmbeddingService(EmbeddingService):
+    api_key: str
+    model: str
+    dimensions: int
+    cache: TTLCache[tuple[str, str, str, int], list[float]]
+
+    @property
+    def endpoint(self) -> str:
+        return "https://api.openai.com/v1/embeddings"
+
+    def _payload(self, text: str) -> dict:
+        payload: dict[str, object] = {
+            "model": self.model or "text-embedding-3-small",
+            "input": text,
+            "encoding_format": "float",
+        }
+        if self.dimensions:
+            payload["dimensions"] = self.dimensions
+        return payload
+
+    def _values_from_response(self, data: dict) -> list[float]:
+        values = (data.get("data") or [{}])[0].get("embedding", [])
+        if not values:
+            raise RuntimeError("OpenAI embedding response did not include values.")
+        return [float(value) for value in values]
+
+    def _cache_key(self, text: str, task_type: str) -> tuple[str, str, str, int]:
+        return (self.model, task_type, normalize_text(text), self.dimensions)
+
+    def _runtime_error(self, exc) -> RuntimeError:
+        httpx = _load_httpx()
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            body = exc.response.text[:300].replace(self.api_key, "[redacted]")
+            return RuntimeError(
+                f"OpenAI embedding request failed with HTTP {status} for model "
+                f"{self.model}. Response: {body}"
+            )
+        return RuntimeError(f"OpenAI embedding request failed for model {self.model}: {exc}")
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def embed(self, text: str) -> list[float]:
+        cache_key = self._cache_key(text, "RETRIEVAL_DOCUMENT")
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        httpx = _load_httpx()
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                response = client.post(
+                    self.endpoint,
+                    json=self._payload(text),
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._runtime_error(exc) from exc
+        values = self._values_from_response(data)
+        self.cache.set(cache_key, values)
+        return values
+
+    async def embed_async(self, text: str) -> list[float]:
+        cache_key = self._cache_key(text, "RETRIEVAL_QUERY")
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        httpx = _load_httpx()
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    self.endpoint,
+                    json=self._payload(text),
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._runtime_error(exc) from exc
+        values = self._values_from_response(data)
+        self.cache.set(cache_key, values)
+        return values
+
+
 @lru_cache
 def get_embedding_service() -> EmbeddingService:
+    if settings.openai_api_key:
+        return OpenAIEmbeddingService(
+            api_key=settings.openai_api_key,
+            model=settings.openai_embedding_model,
+            dimensions=settings.openai_embedding_dimensions,
+            cache=TTLCache(
+                ttl_seconds=settings.embedding_cache_ttl_seconds,
+                max_items=settings.embedding_cache_max_items,
+            ),
+        )
     if settings.gemini_api_key:
         return GeminiEmbeddingService(
             api_key=settings.gemini_api_key,

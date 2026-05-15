@@ -9,7 +9,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.9.0/firebase-auth-compat.js"></script>
   </head>
   <body>
-    <div id="loginOverlay" class="login-overlay active">
+    <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
         <h2>Admin Login</h2>
         <form id="loginForm">
@@ -110,7 +110,7 @@
               <select id="logTypeFilter">
                 <option value="">All types</option>
                 <option value="faq_hit">FAQ hit</option>
-                <option value="llm_fallback">LLM</option>
+                <option value="llm_fallback">Legacy fallback</option>
                 <option value="helpline">Helpline</option>
               </select>
               <select id="logDateFilter">
@@ -132,7 +132,7 @@
           <div class="analytics-grid">
             <div class="stat-card"><h3>Total Queries</h3><p id="statTotal">0</p></div>
             <div class="stat-card"><h3>FAQ Hit Rate</h3><p id="statHitRate">0%</p><p id="statFaqHits" class="meta">0 hits</p></div>
-            <div class="stat-card"><h3>AI Fallback Rate</h3><p id="statLlmRate">0%</p><p id="statLlmHits" class="meta">0 fallbacks</p></div>
+            <div class="stat-card"><h3>Fallback Rate</h3><p id="statLlmRate">0%</p><p id="statLlmHits" class="meta">0 fallbacks</p></div>
             <div class="stat-card"><h3>Helpline Escaped</h3><p id="statHelplineRate">0%</p></div>
           </div>
           <div class="panel-heading"><h2>Top FAQs</h2></div>
@@ -189,7 +189,7 @@
         <input id="siteWelcome" placeholder="Welcome message" />
         <input id="siteFallback" placeholder="Fallback message" />
         <input id="siteAcceptDistance" type="number" min="0" max="2" step="0.01" placeholder="FAQ accept distance" />
-        <input id="siteCandidateDistance" type="number" min="0" max="2" step="0.01" placeholder="LLM candidate distance" />
+        <input id="siteCandidateDistance" type="number" min="0" max="2" step="0.01" placeholder="Composite candidate distance" />
         <input id="siteAllowedOrigins" placeholder="Allowed origins, comma separated" />
         <div class="span-all branding-row">
           <label>Color <input id="sitePrimaryColor" type="color" value="#22c55e" /></label>

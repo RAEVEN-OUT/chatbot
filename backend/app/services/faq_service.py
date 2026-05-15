@@ -179,6 +179,12 @@ class FaqService:
 
     def reindex_site(self, site_id: str) -> int:
         faqs = self.repository.list_faqs(site_id=site_id)
+        count = 0
         for faq in faqs:
-            self.reindex_faq(faq.id)
-        return len(faqs)
+            try:
+                self.reindex_faq(faq.id)
+                count += 1
+            except Exception as e:
+                # Log error and continue to next FAQ
+                print(f"Failed to reindex FAQ {faq.id}: {e}")
+        return count

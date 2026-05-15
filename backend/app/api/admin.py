@@ -245,6 +245,7 @@ def list_faqs(
 @router.post("/faqs", response_model=FaqRecord)
 def create_faq(
     payload: FaqCreate,
+    background_tasks: BackgroundTasks,
     faq_service: FaqService = Depends(get_faq_service),
     repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
@@ -258,13 +259,14 @@ def create_faq(
         if not group:
             raise HTTPException(status_code=404, detail="Group not found.")
         _require_group_access(group, principal)
-    return faq_service.create_faq(payload)
+    return faq_service.create_faq(payload, background_tasks)
 
 
 @router.patch("/faqs/{faq_id}", response_model=FaqRecord)
 def update_faq(
     faq_id: str,
     payload: FaqUpdate,
+    background_tasks: BackgroundTasks,
     faq_service: FaqService = Depends(get_faq_service),
     repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
@@ -289,7 +291,7 @@ def update_faq(
             raise HTTPException(status_code=404, detail="Group not found.")
         _require_group_access(group, principal)
 
-    updated = faq_service.update_faq(faq_id, payload)
+    updated = faq_service.update_faq(faq_id, payload, background_tasks)
     if not updated:
         raise HTTPException(status_code=404, detail="FAQ not found.")
     return updated
@@ -392,8 +394,11 @@ def get_group_analytics(
 @router.get("/logs")
 def list_logs(
     site_id: str | None = None,
+    group_id: str | None = None,
     response_type: ResponseType | None = None,
+    type: ResponseType | None = None,
     since: str | None = None,
+    date_range: str | None = None,
     fallback_only: bool = False,
     limit: int = Query(default=20, ge=1, le=500),
     offset: int = 0,
@@ -402,28 +407,54 @@ def list_logs(
 ):
     if site_id:
         require_site_access(principal, site_id)
-    if since:
+    if group_id:
+        group = repository.get_group(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found.")
+        _require_group_access(group, principal)
+
+    effective_type = response_type or type
+    effective_since = since or date_range
+    if effective_since:
         now = datetime.now(timezone.utc)
         cutoffs = {
             "1d": now - timedelta(days=1),
             "7d": now - timedelta(days=7),
             "30d": now - timedelta(days=30),
         }
-        cutoff = cutoffs.get(since)
+        cutoff = cutoffs.get(effective_since)
     else:
         cutoff = None
 
-    # Pass a high limit to repository to get all filtered logs, then paginate here
-    all_logs = repository.list_logs(
-        site_id=site_id,
-        response_type=response_type,
-        fallback_only=fallback_only,
-        limit=1000,
-        offset=0,
-        since=cutoff,
-    )
+    site_ids = [site_id] if site_id else []
+    if group_id:
+        site_ids = repository.get_group(group_id).site_ids
+
+    if site_ids:
+        all_logs = []
+        for target_site_id in site_ids:
+            all_logs.extend(
+                repository.list_logs(
+                    site_id=target_site_id,
+                    response_type=effective_type,
+                    fallback_only=fallback_only,
+                    limit=1000,
+                    offset=0,
+                    since=cutoff,
+                )
+            )
+        all_logs.sort(key=lambda log: log.timestamp, reverse=True)
+    else:
+        all_logs = repository.list_logs(
+            site_id=None,
+            response_type=effective_type,
+            fallback_only=fallback_only,
+            limit=1000,
+            offset=0,
+            since=cutoff,
+        )
     
-    if not site_id and not principal.can_access_all_sites:
+    if not site_id and not group_id and not principal.can_access_all_sites:
         all_logs = [log for log in all_logs if principal.can_access_site(log.site_id)]
         
     total_count = len(all_logs)
@@ -472,12 +503,16 @@ def convert_log_to_faq(
 @router.post("/sites/{site_id}/reindex")
 def reindex_site(
     site_id: str,
+    background_tasks: BackgroundTasks,
     faq_service: FaqService = Depends(get_faq_service),
+    repository: Repository = Depends(get_repo),
     principal: AdminPrincipal = Depends(require_admin),
 ):
     require_site_access(principal, site_id)
-    count = faq_service.reindex_site(site_id)
-    return {"status": "completed", "total_items": count}
+    # Get count before starting background task
+    count = len(repository.list_faqs(site_id=site_id))
+    background_tasks.add_task(faq_service.reindex_site, site_id)
+    return {"status": "started", "total_items": count}
 
 
 @router.post("/register-site-owner")

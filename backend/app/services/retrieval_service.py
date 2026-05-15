@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import AsyncIterable
 
@@ -18,11 +19,40 @@ from app.schemas.models import (
     SiteRecord,
 )
 from app.services.embedding_service import EmbeddingService
-from app.services.llm_service import LlmService
+from app.services.llm_service import DisabledLlmService, LlmService
 from app.services.text import normalize_text
 
 logger = logging.getLogger(__name__)
 _background_tasks: set[asyncio.Task] = set()
+_LEXICAL_STOP_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "can",
+    "do",
+    "does",
+    "for",
+    "give",
+    "i",
+    "is",
+    "me",
+    "of",
+    "please",
+    "tell",
+    "the",
+    "to",
+    "what",
+    "whats",
+    "wht",
+    "whts",
+}
+_TOKEN_ALIASES = {
+    "colours": "color",
+    "colour": "color",
+    "colors": "color",
+    "fruits": "fruit",
+}
 
 
 def _schedule_background(coro) -> None:
@@ -47,11 +77,11 @@ class RetrievalService:
         self,
         repository: Repository,
         embedder: EmbeddingService,
-        llm: LlmService,
+        llm: LlmService | None = None,
     ) -> None:
         self.repository = repository
         self.embedder = embedder
-        self.llm = llm
+        self.llm = llm or DisabledLlmService()
 
     def create_session(self, payload) -> ChatSessionRecord:
         session = ChatSessionRecord(
@@ -183,38 +213,263 @@ class RetrievalService:
             return self._helpline(site, None, None)
 
         best_vector, best_distance = results[0]
+        should_try_composite = bool(self._decompose_question(question)) or self._is_aggregation_question(question)
+        if should_try_composite:
+            composite = await self._composite_faq_answer(site, question, results)
+            if composite:
+                return composite
+            llm_candidate = await self._llm_fallback_answer(site, question, results)
+            if llm_candidate:
+                return llm_candidate
+            return self._helpline(site, best_vector.faq_id, best_distance)
+
         if best_distance <= site.faq_accept_distance:
             return self._faq_hit(best_vector, best_distance)
 
-        llm_candidates = [
-            vector
-            for vector, distance in results
-            if distance <= site.llm_candidate_distance
-        ][:3]
-
-        if self.llm.model_name and llm_candidates:
-            reranked_faq = await self.llm.select_best_faq_async(question, llm_candidates)
-            if reranked_faq:
-                reranked_distance = next(
-                    distance for vector, distance in results if vector.id == reranked_faq.id
-                )
-                return self._faq_hit(reranked_faq, reranked_distance)
-
-            llm_answer = await self.llm.answer_from_faqs_async(question, llm_candidates, site=site)
-            if llm_answer:
-                return RetrievalCandidate(
-                    answer=llm_answer,
-                    response_type=ResponseType.llm_fallback,
-                    matched_faq_id=best_vector.faq_id,
-                    vector_distance=best_distance,
-                    llm_model=self.llm.model_name,
-                )
-
-        # LLM returned NO_ANSWER or is disabled — fall back to closest FAQ if within review distance
         if best_distance <= site.faq_review_distance:
             return self._faq_hit(best_vector, best_distance)
 
+        llm_candidate = await self._llm_fallback_answer(site, question, results)
+        if llm_candidate:
+            return llm_candidate
+
         return self._helpline(site, best_vector.faq_id, best_distance)
+
+    def _decompose_question(self, question: str) -> list[str]:
+        parts = [
+            part.strip(" .?!,;:")
+            for part in re.split(r"\s+(?:and|also|plus|with|along with)\s+|[?;]\s*", question, flags=re.I)
+        ]
+        useful: list[str] = []
+        shared_prefix = ""
+        for index, part in enumerate(parts):
+            tokens = part.split()
+            if len(tokens) >= 3:
+                useful.append(part)
+                if index == 0 and len(tokens) > 3:
+                    shared_prefix = " ".join(tokens[:-1])
+                continue
+            if shared_prefix and tokens:
+                useful.append(f"{shared_prefix} {' '.join(tokens)}")
+        if len(useful) <= 1:
+            return []
+        unique: list[str] = []
+        seen: set[str] = set()
+        for part in useful[:4]:
+            normalized = normalize_text(part)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append(part)
+        return unique
+
+    def _is_aggregation_question(self, question: str) -> bool:
+        normalized = normalize_text(question)
+        tokens = set(normalized.split())
+        if not tokens:
+            return False
+        if tokens & {"hello", "hi", "hey", "today", "now"}:
+            return False
+        if re.search(r"\b(?:all|list|multiple|both|each|various|different|fruits|colors|colours)\b", normalized):
+            return True
+        return bool(re.search(r"\bwhat(?:s| is| are)?\b.*\b(?:types|kinds|options|answers|colors|colours)\b", normalized))
+
+    def _important_tokens(self, text: str) -> set[str]:
+        tokens: set[str] = set()
+        for token in normalize_text(text).split():
+            if len(token) <= 1 or token in _LEXICAL_STOP_WORDS:
+                continue
+            token = _TOKEN_ALIASES.get(token, token)
+            if len(token) > 3 and token.endswith("s"):
+                token = token[:-1]
+            tokens.add(token)
+        return tokens
+
+    def _lexical_score(self, question: str, vector: FaqVectorRecord) -> int:
+        query_tokens = self._important_tokens(question)
+        if not query_tokens:
+            return 0
+        faq_tokens = self._important_tokens(
+            f"{vector.question_snapshot} {vector.source_text}"
+        )
+        return len(query_tokens & faq_tokens)
+
+    def _best_chunk_match(
+        self,
+        question: str,
+        results: list[tuple[FaqVectorRecord, float]],
+        max_distance: float,
+    ) -> tuple[FaqVectorRecord, float] | None:
+        eligible = [
+            (vector, distance)
+            for vector, distance in results
+            if distance <= max_distance
+        ]
+        if not eligible:
+            return None
+        best = max(
+            eligible,
+            key=lambda item: (self._lexical_score(question, item[0]), -item[1]),
+        )
+        if self._important_tokens(question) and self._lexical_score(question, best[0]) == 0:
+            return None
+        return best
+
+    async def _composite_faq_answer(
+        self,
+        site: SiteRecord,
+        question: str,
+        initial_results: list[tuple[FaqVectorRecord, float]],
+    ) -> RetrievalCandidate | None:
+        sub_questions = self._decompose_question(question)
+        if len(sub_questions) < 2:
+            if self._is_aggregation_question(question):
+                return self._composite_from_ranked_results(site, question, initial_results)
+            return None
+
+        async def match_sub_question(sub_question: str) -> tuple[str, FaqVectorRecord, float] | None:
+            normalized = normalize_text(sub_question)
+            exact = await asyncio.to_thread(
+                self.repository.get_vector_by_normalized_text,
+                site.id,
+                normalized,
+            )
+            if exact:
+                return sub_question, exact, 0.0
+            try:
+                embedding = await self.embedder.embed_async(sub_question)
+                results = await asyncio.to_thread(
+                    self.repository.search_vectors,
+                    site.id,
+                    embedding,
+                    settings.vector_search_limit,
+                )
+            except Exception:
+                logger.exception("Composite retrieval failed for site %s", site.id)
+                return None
+            if not results:
+                return None
+            match = self._best_chunk_match(
+                sub_question,
+                results,
+                max(site.faq_review_distance, site.llm_candidate_distance),
+            )
+            if match:
+                vector, distance = match
+                return sub_question, vector, distance
+            return None
+
+        matches = await asyncio.gather(*(match_sub_question(part) for part in sub_questions))
+        valid_matches = [match for match in matches if match]
+        if len(valid_matches) < 2 or len(valid_matches) != len(sub_questions):
+            return None
+
+        by_faq: dict[str, tuple[str, FaqVectorRecord, float]] = {}
+        for match in valid_matches:
+            _, vector, distance = match
+            current = by_faq.get(vector.faq_id)
+            if not current or distance < current[2]:
+                by_faq[vector.faq_id] = match
+
+        if len(by_faq) < 2:
+            return None
+
+        ordered = list(by_faq.values())
+        answer = "\n\n".join(
+            f"{index + 1}. {vector.answer_snapshot}"
+            for index, (_, vector, _) in enumerate(ordered)
+        )
+        best_vector, best_distance = initial_results[0]
+        return RetrievalCandidate(
+            answer=answer,
+            response_type=ResponseType.faq_hit,
+            matched_faq_id=best_vector.faq_id,
+            vector_distance=min(distance for _, _, distance in ordered),
+        )
+
+    def _composite_from_ranked_results(
+        self,
+        site: SiteRecord,
+        question: str,
+        results: list[tuple[FaqVectorRecord, float]],
+    ) -> RetrievalCandidate | None:
+        if not results:
+            return None
+        _, best_distance = results[0]
+        if best_distance > site.faq_review_distance:
+            return None
+
+        max_distance = min(site.llm_candidate_distance, max(best_distance + 0.08, site.faq_review_distance))
+        by_faq: dict[str, tuple[FaqVectorRecord, float]] = {}
+        for vector, distance in results:
+            if distance > max_distance:
+                continue
+            if self._lexical_score(question, vector) == 0:
+                continue
+            current = by_faq.get(vector.faq_id)
+            if not current or distance < current[1]:
+                by_faq[vector.faq_id] = (vector, distance)
+
+        if len(by_faq) < 2:
+            return None
+
+        ordered = sorted(by_faq.values(), key=lambda item: item[1])[:4]
+        answer = "\n\n".join(
+            f"{index + 1}. {vector.answer_snapshot}"
+            for index, (vector, _) in enumerate(ordered)
+        )
+        best_vector, best_distance = ordered[0]
+        return RetrievalCandidate(
+            answer=answer,
+            response_type=ResponseType.faq_hit,
+            matched_faq_id=best_vector.faq_id,
+            vector_distance=best_distance,
+        )
+
+    def _llm_candidates(
+        self,
+        site: SiteRecord,
+        question: str,
+        results: list[tuple[FaqVectorRecord, float]],
+    ) -> list[FaqVectorRecord]:
+        max_distance = min(site.llm_candidate_distance, site.faq_review_distance + 0.15)
+        aggregation = self._is_aggregation_question(question) or bool(self._decompose_question(question))
+        candidates: list[FaqVectorRecord] = []
+        seen: set[str] = set()
+        for vector, distance in results:
+            if distance > max_distance or vector.faq_id in seen:
+                continue
+            if aggregation and self._lexical_score(question, vector) == 0:
+                continue
+            seen.add(vector.faq_id)
+            candidates.append(vector)
+        return candidates[:5]
+
+    async def _llm_fallback_answer(
+        self,
+        site: SiteRecord,
+        question: str,
+        results: list[tuple[FaqVectorRecord, float]],
+    ) -> RetrievalCandidate | None:
+        if not self.llm.model_name:
+            return None
+        candidates = self._llm_candidates(site, question, results)
+        if not candidates:
+            return None
+        try:
+            answer = await self.llm.answer_from_faqs_async(question, candidates, site=site)
+        except Exception:
+            logger.exception("LLM fallback failed for site %s", site.id)
+            return None
+        if not answer:
+            return None
+        best_vector, best_distance = results[0]
+        return RetrievalCandidate(
+            answer=answer,
+            response_type=ResponseType.llm_fallback,
+            matched_faq_id=best_vector.faq_id,
+            vector_distance=best_distance,
+            llm_model=self.llm.model_name,
+        )
 
     def _faq_hit(
         self,
@@ -296,54 +551,22 @@ class RetrievalService:
                 results = []
             if results:
                 best_vector, best_distance = results[0]
-                if best_distance <= site.faq_accept_distance:
+                should_try_composite = bool(self._decompose_question(payload.question)) or self._is_aggregation_question(payload.question)
+                if should_try_composite:
+                    candidate = await self._composite_faq_answer(site, payload.question, results)
+                    if not candidate:
+                        candidate = await self._llm_fallback_answer(site, payload.question, results)
+                    if not candidate:
+                        candidate = self._helpline(site, best_vector.faq_id, best_distance)
+                elif best_distance <= site.faq_accept_distance:
                     candidate = self._faq_hit(best_vector, best_distance)
                 else:
-                    llm_candidates = [
-                        vector
-                        for vector, distance in results
-                        if distance <= site.llm_candidate_distance
-                    ][:3]
-
-                    if self.llm.model_name and llm_candidates:
-                        reranked_faq = await self.llm.select_best_faq_async(
-                            payload.question,
-                            llm_candidates,
-                        )
-                        if reranked_faq:
-                            reranked_distance = next(
-                                distance
-                                for vector, distance in results
-                                if vector.id == reranked_faq.id
-                            )
-                            candidate = self._faq_hit(reranked_faq, reranked_distance)
-                        else:
-                            async for event in self._stream_llm_fallback(
-                                site,
-                                session,
-                                payload,
-                                best_vector,
-                                best_distance,
-                                llm_candidates,
-                            ):
-                                yield event
-                            return
-                    elif not self.llm.model_name and best_distance <= site.faq_review_distance:
+                    if best_distance <= site.faq_review_distance:
                         candidate = self._faq_hit(best_vector, best_distance)
-                    elif self.llm.model_name:
-                        async for event in self._stream_llm_fallback(
-                            site,
-                            session,
-                            payload,
-                            best_vector,
-                            best_distance,
-                            [vector for vector, _ in results[:3]],
-                        ):
-                            yield event
-                        return
                     else:
-                        # LLM disabled, no review-distance match either
-                        candidate = self._helpline(site, best_vector.faq_id, best_distance)
+                        candidate = await self._llm_fallback_answer(site, payload.question, results)
+                        if not candidate:
+                            candidate = self._helpline(site, best_vector.faq_id, best_distance)
             else:
                 candidate = self._helpline(site, None, None)
 
@@ -360,62 +583,5 @@ class RetrievalService:
         yield {"type": "token", "text": candidate.answer}
         self._log_candidate_background(site, session, payload, candidate)
         yield {"type": "done"}
+        return
 
-    async def _stream_llm_fallback(
-        self,
-        site: SiteRecord,
-        session: ChatSessionRecord,
-        payload: ChatMessageRequest,
-        best_vector: FaqVectorRecord,
-        best_distance: float,
-        candidates: list[FaqVectorRecord],
-    ) -> AsyncIterable[dict]:
-        yield {
-            "type": "metadata",
-            "response_type": ResponseType.llm_fallback.value,
-            "matched_faq_id": best_vector.faq_id,
-            "vector_distance": best_distance,
-            "session_id": session.id,
-        }
-
-        full_answer = ""
-        try:
-            async for token in self.llm.stream_answer_from_faqs_async(payload.question, candidates, site=site):
-                full_answer += token
-                yield {"type": "token", "text": token}
-        except Exception:
-            logger.exception("LLM stream fallback failed for site %s", site.id)
-
-        if not full_answer:
-            # LLM said NO_ANSWER — try closest FAQ before helpline
-            if best_distance <= site.faq_review_distance:
-                faq_fallback = self._faq_hit(best_vector, best_distance)
-                yield {"type": "token", "text": faq_fallback.answer}
-                self._log_candidate_background(site, session, payload, faq_fallback)
-            else:
-                helpline = self._helpline(site, best_vector.faq_id, best_distance)
-                yield {"type": "token", "text": helpline.answer}
-                self._log_candidate_background(site, session, payload, helpline)
-            yield {"type": "done"}
-            return
-
-        user_name, email, phone = self._contact_fields(session, payload)
-        _schedule_background(
-            self._add_log(
-                ChatLogRecord(
-                    id=new_id("log"),
-                    site_id=site.id,
-                    session_id=session.id,
-                    user_name=user_name,
-                    email=email,
-                    phone=phone,
-                    question=payload.question,
-                    answer=full_answer,
-                    response_type=ResponseType.llm_fallback,
-                    matched_faq_id=best_vector.faq_id,
-                    vector_distance=best_distance,
-                    llm_model=self.llm.model_name,
-                )
-            )
-        )
-        yield {"type": "done"}

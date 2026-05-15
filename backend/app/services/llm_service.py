@@ -12,20 +12,26 @@ def _load_httpx():
     try:
         import httpx
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("Install httpx to use Gemini LLM fallback.") from exc
+        raise RuntimeError("Install httpx to use hosted LLM fallback.") from exc
     return httpx
 
 
 class LlmService(Protocol):
     model_name: str
 
-    def answer_from_faqs(self, question: str, candidates: list[FaqVectorRecord]) -> str | None:
+    def answer_from_faqs(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
+    ) -> str | None:
         ...
 
     async def answer_from_faqs_async(
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> str | None:
         ...
 
@@ -33,6 +39,7 @@ class LlmService(Protocol):
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> AsyncIterable[str]:
         ...
 
@@ -48,13 +55,19 @@ class LlmService(Protocol):
 class DisabledLlmService(LlmService):
     model_name: str = ""
 
-    def answer_from_faqs(self, question: str, candidates: list[FaqVectorRecord]) -> str | None:
+    def answer_from_faqs(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
+    ) -> str | None:
         return None
 
     async def answer_from_faqs_async(
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> str | None:
         return None
 
@@ -62,6 +75,7 @@ class DisabledLlmService(LlmService):
         self,
         question: str,
         candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
     ) -> AsyncIterable[str]:
         if False:
             yield ""
@@ -145,10 +159,11 @@ class GeminiLlmService(LlmService):
         helpline_note = f" If the user needs further help, refer them to the helpline: {helpline}." if helpline else ""
         prompt = (
             f"You are {bot_name}, a helpful and friendly customer support agent for {site_name}.\n"
-            "Your job is to answer the user's question using the provided FAQ information.\n"
+            "Your job is to answer the user's question using only the provided FAQ information.\n"
             "If the question is a general greeting or asks about who you are, respond naturally using your identity above.\n"
             "If the question is about a specific topic not covered by any FAQ, respond with exactly: NO_ANSWER\n"
-            "You may combine information from multiple FAQs to give a complete answer.\n"
+            "You may combine information from multiple FAQs to give a complete answer, but do not add facts, policies, prices, dates, links, or steps that are not present in those FAQs.\n"
+            "If only part of a multi-part question is covered, answer the covered part and say the remaining part needs the helpline.\n"
             f"Write your response in a friendly, conversational tone.{helpline_note}\n\n"
             f"User question: {question}\n\n"
             f"Available FAQs to use as context:\n{faq_context}"
@@ -336,8 +351,146 @@ class GeminiLlmService(LlmService):
             
         return None
 
+
+@dataclass
+class OpenAILlmService(LlmService):
+    api_key: str
+    model_name: str
+
+    @property
+    def endpoint(self) -> str:
+        return "https://api.openai.com/v1/responses"
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _instructions(self, site: SiteRecord | None = None) -> str:
+        bot_name = site.bot_name if site else "Support Bot"
+        site_name = site.name if site else "this service"
+        return (
+            f"You are {bot_name}, a support assistant for {site_name}.\n"
+            "Answer ONLY using the provided FAQ answers.\n"
+            "Do not add facts, examples, policies, prices, links, dates, or steps that are not in the FAQs.\n"
+            "If the FAQs do not answer the user's question, output exactly NO_ANSWER.\n"
+            "If the user asks for multiple covered things, combine only the relevant covered FAQ answers.\n"
+            "If irrelevant FAQs are present, ignore them.\n"
+            "Keep the answer concise."
+        )
+
+    def _input(self, question: str, candidates: list[FaqVectorRecord]) -> str:
+        faq_context = "\n\n".join(
+            (
+                f"FAQ {index + 1}\n"
+                f"Question: {candidate.question_snapshot}\n"
+                f"Answer: {candidate.answer_snapshot}"
+            )
+            for index, candidate in enumerate(candidates[:5])
+        )
+        return f"User question: {question}\n\nApproved FAQs:\n{faq_context}"
+
+    def _payload(self, question: str, candidates: list[FaqVectorRecord], site: SiteRecord | None = None) -> dict:
+        return {
+            "model": self.model_name or "gpt-4o-mini",
+            "instructions": self._instructions(site),
+            "input": self._input(question, candidates),
+            "max_output_tokens": 300,
+        }
+
+    def _extract_answer(self, data: dict) -> str | None:
+        text = (data.get("output_text") or "").strip()
+        if not text:
+            parts: list[str] = []
+            for item in data.get("output", []) or []:
+                for content in item.get("content", []) or []:
+                    if content.get("type") in {"output_text", "text"}:
+                        parts.append(str(content.get("text", "")))
+            text = "".join(parts).strip()
+        if not text or text == "NO_ANSWER":
+            return None
+        return text
+
+    def _runtime_error(self, exc) -> RuntimeError:
+        httpx = _load_httpx()
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            body = exc.response.text[:300].replace(self.api_key, "[redacted]")
+            return RuntimeError(
+                f"OpenAI LLM request failed with HTTP {status} for model "
+                f"{self.model_name}. Response: {body}"
+            )
+        return RuntimeError(f"OpenAI LLM request failed for model {self.model_name}: {exc}")
+
+    def answer_from_faqs(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
+    ) -> str | None:
+        if not candidates:
+            return None
+        httpx = _load_httpx()
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
+                    self.endpoint,
+                    json=self._payload(question, candidates, site),
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._runtime_error(exc) from exc
+        return self._extract_answer(data)
+
+    async def answer_from_faqs_async(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
+    ) -> str | None:
+        if not candidates:
+            return None
+        httpx = _load_httpx()
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    self.endpoint,
+                    json=self._payload(question, candidates, site),
+                    headers=self._headers(),
+                )
+                response.raise_for_status()
+                data = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise self._runtime_error(exc) from exc
+        return self._extract_answer(data)
+
+    async def stream_answer_from_faqs_async(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+        site: SiteRecord | None = None,
+    ) -> AsyncIterable[str]:
+        answer = await self.answer_from_faqs_async(question, candidates, site)
+        if answer:
+            yield answer
+
+    async def select_best_faq_async(
+        self,
+        question: str,
+        candidates: list[FaqVectorRecord],
+    ) -> FaqVectorRecord | None:
+        return None
+
 @lru_cache
 def get_llm_service() -> LlmService:
+    if settings.openai_api_key:
+        return OpenAILlmService(
+            api_key=settings.openai_api_key,
+            model_name=settings.openai_chat_model,
+        )
     if settings.gemini_api_key:
         return GeminiLlmService(
             api_key=settings.gemini_api_key,
