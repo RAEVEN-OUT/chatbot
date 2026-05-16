@@ -350,9 +350,22 @@ function showNoAccess() {
 function renderReferenceControls() {
   $("siteOptions").innerHTML = state.sites.map((site) => `<option value="${esc(siteDisplay(site))}"></option>`).join("");
   $("groupOptions").innerHTML = state.groups.map((group) => `<option value="${esc(groupDisplay(group))}"></option>`).join("");
+
+  const multiSite = state.sites.length > 1;
   const hasGroups = state.groups.length > 0;
-  $("toggleGroupsBtn").style.display = hasGroups ? "" : "none";
-  $("groupsTab").style.display = "flex";
+
+  // 1. contextToggle (Site/Group toggle): Only show if user has both multiple sites AND at least one group
+  $("contextToggle").style.display = (multiSite && hasGroups) ? "" : "none";
+  
+  // 2. selectionArea (Selected Site/Group name and Switch button): Show if user has multiple sites
+  $("selectionArea").style.display = multiSite ? "" : "none";
+  
+  // 3. groupsTab (Sidebar navigation item): Show if user has multiple sites (so they can create groups)
+  $("groupsTab").style.display = multiSite ? "flex" : "none";
+  
+  // Ensure the toggle button for groups inside the toggle area is also tied to existence of groups
+  $("toggleGroupsBtn").style.display = (multiSite && hasGroups) ? "" : "none";
+
   if (!hasGroups && !isSiteMode()) {
     $("toggleSitesBtn")?.classList.add("active");
     $("toggleGroupsBtn")?.classList.remove("active");
@@ -361,6 +374,12 @@ function renderReferenceControls() {
 }
 
 function syncSelectionBar() {
+  // For single-site users, skip all selection UI — just update tester name
+  if (state.sites.length <= 1) {
+    $("testerSiteName").textContent = currentSite()?.name || "Support Assistant";
+    return;
+  }
+
   const siteMode = isSiteMode();
   const currentId = siteMode ? state.currentSiteId : state.currentGroupId;
   const selected = siteMode ? currentSite() : currentGroup();
@@ -988,13 +1007,34 @@ window.editGroup = function editGroup(groupId) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
+let groupQueue = Promise.resolve();
+
 window.deleteGroup = async function deleteGroup(groupId) {
   if (!confirm("Delete this group?")) return;
-  try { 
-    await api(`/api/groups/${groupId}`, { method: "DELETE" }); 
-    state.groups = state.groups.filter((group) => group.id !== groupId);
-    renderGroups();
-  } catch (error) { alert(error.message); }
+  
+  const groupIndex = state.groups.findIndex((g) => g.id === groupId);
+  if (groupIndex === -1) return;
+  const backupGroup = state.groups[groupIndex];
+
+  // Optimistic UI: remove immediately
+  state.groups.splice(groupIndex, 1);
+  renderReferenceControls();
+  renderGroups();
+
+  groupQueue = groupQueue.then(async () => {
+    try { 
+      await api(`/api/groups/${groupId}`, { method: "DELETE" }); 
+      Cache.set("groups", state.groups);
+    } catch (error) { 
+      // Revert on failure
+      if (!state.groups.some(g => g.id === groupId)) {
+        state.groups.splice(groupIndex, 0, backupGroup);
+        renderReferenceControls();
+        renderGroups();
+      }
+      alert("Failed to delete group: " + error.message); 
+    }
+  });
 };
 
 function switchTab(tabId) {
@@ -1371,28 +1411,163 @@ $("faqForm").addEventListener("submit", async (e) => {
   }
 });
 
+$("importCsvBtn").addEventListener("click", () => $("faqCsvInput").click());
+$("faqCsvInput").addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  const rows = text.split("\n").map(r => r.trim()).filter(Boolean);
+  if (!rows.length) return showToast("CSV is empty", "error");
+
+  const headers = rows[0].toLowerCase().split(",");
+  const hasQuestion = headers.includes("question") || headers.includes("q");
+  const hasAnswer = headers.includes("answer") || headers.includes("a");
+  
+  const startIndex = (hasQuestion && hasAnswer) ? 1 : 0;
+  let count = 0;
+  
+  const toast = showToast("Importing FAQs...", "loading", 0);
+  
+  const isSite = isSiteMode();
+  const site_id = isSite ? state.currentSiteId : "";
+  const group_id = !isSite ? state.currentGroupId : "";
+  
+  for (let i = startIndex; i < rows.length; i++) {
+    // Simple CSV parser ignoring commas inside quotes
+    const cols = rows[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+    if (!cols || cols.length < 2) continue;
+    
+    const question = cols[0].replace(/^"|"$/g, "");
+    const answer = cols[1].replace(/^"|"$/g, "");
+    const aliasesStr = cols[2] ? cols[2].replace(/^"|"$/g, "") : "";
+    const aliases = aliasesStr ? aliasesStr.split("|").map(s => s.trim()).filter(Boolean) : [];
+    
+    if (!question || !answer) continue;
+
+    const payload = {
+      question,
+      answer,
+      aliases,
+      site_id,
+      group_id,
+      active: true
+    };
+    
+    const tempId = "temp_" + Date.now() + "_" + i;
+    const tempFaq = { ...payload, id: tempId, created_at: new Date().toISOString() };
+    state.faqs.unshift(tempFaq);
+    
+    faqQueue = faqQueue.then(async () => {
+      try {
+        const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
+        faqIdMap[tempId] = created.id;
+        const idx = state.faqs.findIndex(f => f.id === tempId);
+        if (idx !== -1) {
+          state.faqs[idx] = created;
+        }
+      } catch (err) {
+        state.faqs = state.faqs.filter(f => f.id !== tempId && f.id !== faqIdMap[tempId]);
+        console.error("Failed to import row", i, err);
+      }
+    });
+    count++;
+  }
+  
+  renderFaqs();
+  event.target.value = "";
+  
+  faqQueue.then(() => {
+    finishToast(toast, `Imported ${count} FAQs`, "success");
+    refreshAnalytics();
+    renderFaqs();
+  });
+});
+
 $("groupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const groupId = $("groupId").value.trim();
-  const payload = { id: groupId || undefined, name: $("groupName").value.trim(), description: $("groupDescription").value.trim(), site_ids: selectedCheckboxValues("groupSite"), active: true };
-  try {
-    if (groupId && state.groups.some((group) => group.id === groupId)) {
-      const { id, ...patch } = payload;
-      const updated = await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
-      const idx = state.groups.findIndex(g => g.id === groupId);
-      if (idx !== -1) state.groups[idx] = updated;
-    } else {
-      const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
-      state.groups.unshift(created);
-    }
-    $("groupForm").reset();
+  const siteIds = selectedCheckboxValues("groupSite");
+  if (siteIds.length < 2) {
+    showToast("A group must contain at least 2 sites.", "error");
+    return;
+  }
+
+  const payload = { 
+    id: groupId || undefined, 
+    name: $("groupName").value.trim(), 
+    description: $("groupDescription").value.trim(), 
+    site_ids: siteIds, 
+    active: true 
+  };
+
+  // Optimistic UI: reset form and prepare state
+  $("groupForm").reset();
+
+  if (groupId && state.groups.some((group) => group.id === groupId)) {
+    const idx = state.groups.findIndex(g => g.id === groupId);
+    const backupGroup = state.groups[idx];
+    
+    // Update state optimistically
+    state.groups[idx] = { ...backupGroup, ...payload, updated_at: new Date().toISOString() };
     renderReferenceControls();
     renderGroups();
-  } catch (error) { alert(error.message); }
+
+    groupQueue = groupQueue.then(async () => {
+      try {
+        const { id, ...patch } = payload;
+        const updated = await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
+        const freshIdx = state.groups.findIndex(g => g.id === groupId);
+        if (freshIdx !== -1) {
+          state.groups[freshIdx] = updated;
+          Cache.set("groups", state.groups);
+          renderReferenceControls();
+          renderGroups();
+        }
+      } catch (error) {
+        const freshIdx = state.groups.findIndex(g => g.id === groupId);
+        if (freshIdx !== -1) {
+          state.groups[freshIdx] = backupGroup;
+          renderReferenceControls();
+          renderGroups();
+        }
+        alert("Failed to update group: " + error.message);
+      }
+    });
+  } else {
+    // Optimistic UI for creation
+    const tempId = "temp_group_" + Date.now();
+    const tempGroup = { 
+      ...payload, 
+      id: tempId, 
+      created_at: new Date().toISOString(), 
+      updated_at: new Date().toISOString() 
+    };
+    state.groups.unshift(tempGroup);
+    renderReferenceControls();
+    renderGroups();
+
+    groupQueue = groupQueue.then(async () => {
+      try {
+        const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
+        const idx = state.groups.findIndex(g => g.id === tempId);
+        if (idx !== -1) {
+          state.groups[idx] = created;
+          Cache.set("groups", state.groups);
+          renderReferenceControls();
+          renderGroups();
+        }
+      } catch (error) {
+        state.groups = state.groups.filter(g => g.id !== tempId);
+        renderReferenceControls();
+        renderGroups();
+        alert("Failed to create group: " + error.message);
+      }
+    });
+  }
 });
 
 $("copySnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("snippetCode").textContent));
-$("copyRegisterSnippetBtn").addEventListener("click", () => navigator.clipboard.writeText($("registerSnippet").textContent));
 
 
 $("testForm").addEventListener("submit", async (e) => {

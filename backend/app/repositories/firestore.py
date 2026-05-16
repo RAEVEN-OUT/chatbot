@@ -336,6 +336,56 @@ class FirestoreRepository(Repository):
     def get_session(self, session_id: str) -> ChatSessionRecord | None:
         return self._load("chat_sessions", session_id, ChatSessionRecord)
 
+    def create_log(self, log: ChatLogRecord) -> ChatLogRecord:
+        from datetime import datetime, timedelta, timezone
+        from google.cloud.firestore import Increment
+        data = log.model_dump()
+        # Add TTL field (30 days from now)
+        data["expire_at"] = datetime.now(timezone.utc) + timedelta(days=30)
+        
+        doc_ref = self._collection("chat_logs").document()
+        doc_ref.set(self._to_firestore(data))
+        
+        # Increment counters in background/async-style
+        try:
+            stats_ref = self._collection("site_stats").document(log.site_id)
+            updates = {
+                "total_queries": Increment(1),
+                f"type_{log.response_type.value}": Increment(1)
+            }
+            stats_ref.set(updates, merge=True)
+        except Exception as e:
+            print(f"Stats increment failed: {e}")
+
+        return log.model_copy(update={"id": doc_ref.id})
+
+    def get_site_stats(self, site_id: str) -> dict:
+        doc = self._collection("site_stats").document(site_id).get()
+        if not doc.exists:
+            return {
+                "total_queries": 0,
+                "faq_hits": 0,
+                "llm_fallbacks": 0,
+                "helpline": 0,
+                "hit_rate": 0
+            }
+        
+        data = doc.to_dict()
+        total = data.get("total_queries", 0)
+        hits = data.get("type_faq_hit", 0)
+        llm = data.get("type_llm_fallback", 0)
+        helpline = data.get("type_helpline", 0)
+        
+        return {
+            "total_queries": total,
+            "faq_hits": hits,
+            "llm_fallbacks": llm,
+            "helpline": helpline,
+            "hit_rate": round((hits / total * 100), 1) if total else 0,
+            "llm_rate": round((llm / total * 100), 1) if total else 0,
+            "helpline_rate": round((helpline / total * 100), 1) if total else 0,
+        }
+
     def add_log(self, log: ChatLogRecord) -> ChatLogRecord:
         self._save("chat_logs", log.id, log)
         return log
@@ -353,7 +403,7 @@ class FirestoreRepository(Repository):
         limit: int = 200,
         offset: int = 0,
     ) -> list[ChatLogRecord]:
-        # Lazy Auto-Purge: Trigger a purge in the background when admin lists logs
+        # Lazy Auto-Purge: Trigger a purge in the background
         try:
             import threading
             threading.Thread(target=self.purge_old_logs, args=(site_id, 30), daemon=True).start()
@@ -361,39 +411,31 @@ class FirestoreRepository(Repository):
             pass
 
         query = self._collection("chat_logs").order_by("timestamp", direction="DESCENDING")
+        
         if site_id:
             query = query.where(filter=FieldFilter("site_id", "==", site_id))
-        # Fetch up to 1000 logs to allow in-memory filtering without composite indexes
-        query = query.limit(1000)
         
-        all_logs = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            data["id"] = doc.id
-            log = ChatLogRecord(**self._from_firestore(data))
+        if response_type:
+            query = query.where(filter=FieldFilter("response_type", "==", response_type.value))
+        elif fallback_only:
+            # Note: Firestore doesn't support != in complex queries easily without indexes, 
+            # but we can filter for the other types if needed. 
+            # For now, if fallback_only is true, we skip faq_hits.
+            query = query.where(filter=FieldFilter("response_type", "in", [ResponseType.llm_fallback.value, ResponseType.helpline.value]))
+
+        if review_status:
+            query = query.where(filter=FieldFilter("review_status", "==", review_status.value))
             
-            # Apply filters in Python to avoid Firestore composite index errors
-            if response_type and log.response_type != response_type:
-                continue
-            if review_status and log.review_status != review_status:
-                continue
-            if since and log.timestamp < since:
-                continue
-            if fallback_only and log.response_type == ResponseType.faq_hit:
-                continue
-                
-            all_logs.append(log)
-            
-        # Total count after filtering
-        total_count = len(all_logs)
-            
-        # Apply offset and limit manually
-        paginated_logs = all_logs[offset:offset + limit]
+        if since:
+            query = query.where(filter=FieldFilter("timestamp", ">=", since))
+
+        # Apply offset and limit at DB level
+        query = query.offset(offset).limit(limit)
         
-        # We need a way to return the total count. 
-        # Since the return type is list[ChatLogRecord], we'll pass it in a header or wrapper.
-        # But for now, we can just return the paginated logs. We'll handle total count differently.
-        return paginated_logs
+        return [
+            ChatLogRecord(**self._from_firestore({**doc.to_dict(), "id": doc.id}))
+            for doc in query.stream()
+        ]
         
 
 

@@ -7,7 +7,12 @@ const state = {
   currentGroupId: "",
   sessionId: "",
   principal: null,
+  logPage: 0,
 };
+
+let faqQueue = Promise.resolve();
+const faqIdMap = {};
+let groupQueue = Promise.resolve();
 
 const $ = (id) => document.getElementById(id);
 
@@ -626,6 +631,11 @@ async function refreshLogs({ force = false } = {}) {
   const dateRange = $("logDateFilter")?.value;
   if (type) params.set("type", type);
   if (dateRange) params.set("date_range", dateRange);
+  
+  const limit = 20;
+  const offset = state.logPage * limit;
+  params.set("limit", limit);
+  params.set("offset", offset);
 
   const contextKey = currentContextKey();
   const cached = force ? null : Cache.get(`logs:${contextKey}`);
@@ -975,6 +985,79 @@ $("faqForm").addEventListener("submit", async (event) => {
   }
 });
 
+$("importCsvBtn")?.addEventListener("click", () => $("faqCsvInput").click());
+$("faqCsvInput")?.addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const text = await file.text();
+  const rows = text.split("\n").map(r => r.trim()).filter(Boolean);
+  if (!rows.length) return showToast("CSV is empty", "error");
+
+  const headers = rows[0].toLowerCase().split(",");
+  const hasQuestion = headers.includes("question") || headers.includes("q");
+  const hasAnswer = headers.includes("answer") || headers.includes("a");
+  
+  const startIndex = (hasQuestion && hasAnswer) ? 1 : 0;
+  let count = 0;
+  
+  const toast = showToast("Importing FAQs...", "loading", 0);
+  
+  const isSite = $("toggleSitesBtn").classList.contains("active");
+  const currentId = isSite ? state.currentSiteId : state.currentGroupId;
+  if (!currentId) return showToast(`Select a ${isSite ? "site" : "group"} first.`, "error");
+  
+  for (let i = startIndex; i < rows.length; i++) {
+    // Simple CSV parser ignoring commas inside quotes
+    const cols = rows[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+    if (!cols || cols.length < 2) continue;
+    
+    const question = cols[0].replace(/^"|"$/g, "");
+    const answer = cols[1].replace(/^"|"$/g, "");
+    const aliasesStr = cols[2] ? cols[2].replace(/^"|"$/g, "") : "";
+    const aliases = aliasesStr ? aliasesStr.split("|").map(s => s.trim()).filter(Boolean) : [];
+    
+    if (!question || !answer) continue;
+
+    const payload = {
+      question,
+      answer,
+      aliases,
+      site_id: isSite ? currentId : "",
+      group_id: !isSite ? currentId : "",
+      active: true
+    };
+    
+    const tempId = "temp_" + Date.now() + "_" + i;
+    const tempFaq = { ...payload, id: tempId, created_at: new Date().toISOString() };
+    state.faqs.unshift(tempFaq);
+    
+    faqQueue = faqQueue.then(async () => {
+      try {
+        const created = await api("/api/faqs", { method: "POST", body: JSON.stringify(payload) });
+        faqIdMap[tempId] = created.id;
+        const idx = state.faqs.findIndex(f => f.id === tempId);
+        if (idx !== -1) {
+          state.faqs[idx] = created;
+        }
+      } catch (err) {
+        state.faqs = state.faqs.filter(f => f.id !== tempId && f.id !== faqIdMap[tempId]);
+        console.error("Failed to import row", i, err);
+      }
+    });
+    count++;
+  }
+  
+  renderFaqs();
+  event.target.value = "";
+  
+  faqQueue.then(() => {
+    finishToast(toast, `Imported ${count} FAQs`, "success");
+    refreshAnalytics();
+    renderFaqs();
+  });
+});
+
 function updateTesterSiteName() {
   $("testerSiteName").textContent = currentSite()?.name || "No site selected";
 }
@@ -1018,17 +1101,31 @@ $("createFaqBtn") && $("createFaqBtn").addEventListener("click", openCreateFaqMo
 $("closeFaqModalBtn") && $("closeFaqModalBtn").addEventListener("click", () => $("faqModal").close());
 $("clearFaqBtn") && $("clearFaqBtn").addEventListener("click", clearFaqForm);
 
+
 ["siteFilter"].forEach((id) => $(id) && $(id).addEventListener("input", renderSites));
 ["groupFilter"].forEach((id) => $(id) && $(id).addEventListener("input", renderGroups));
 $("groupSiteSearch") && $("groupSiteSearch").addEventListener("input", renderGroups);
 $("userSiteSearch") && $("userSiteSearch").addEventListener("input", renderUserSites);
-$("logSearch") && $("logSearch").addEventListener("input", renderLogs);
-["fallbackOnly", "logTypeFilter", "logDateFilter"].forEach((id) => $(id) && $(id).addEventListener("change", refreshLogs));
+$("logSearch") && $("logSearch").addEventListener("input", () => { state.logPage = 0; renderLogs(); });
+["fallbackOnly", "logTypeFilter", "logDateFilter"].forEach((id) => $(id) && $(id).addEventListener("change", () => { state.logPage = 0; refreshLogs(); }));
+
+$("prevLogPage")?.addEventListener("click", () => {
+  if (state.logPage > 0) {
+    state.logPage--;
+    refreshLogs();
+  }
+});
+
+$("nextLogPage")?.addEventListener("click", () => {
+  state.logPage++;
+  refreshLogs();
+});
 
 $("toggleSitesBtn").addEventListener("click", () => {
   $("toggleSitesBtn").classList.add("active");
   $("toggleGroupsBtn").classList.remove("active");
   if (!state.currentSiteId && state.sites.some((site) => !site.deleted_at)) state.currentSiteId = state.sites.find((site) => !site.deleted_at).id;
+  state.logPage = 0;
   syncChoosers();
   refreshContextData();
 });
@@ -1037,6 +1134,7 @@ $("toggleGroupsBtn").addEventListener("click", () => {
   $("toggleGroupsBtn").classList.add("active");
   $("toggleSitesBtn").classList.remove("active");
   if (!state.currentGroupId && state.groups.length) state.currentGroupId = state.groups[0].id;
+  state.logPage = 0;
   syncChoosers();
   refreshContextData();
 });
@@ -1199,59 +1297,102 @@ window.deleteSite = async function deleteSite(siteId) {
 
 window.deleteGroup = async function deleteGroup(groupId) {
   if (!confirm("Delete this group?")) return;
-  const previous = [...state.groups];
+  const groupIndex = state.groups.findIndex((g) => g.id === groupId);
+  if (groupIndex === -1) return;
+  const backupGroup = state.groups[groupIndex];
+
   const toast = showToast("Deleting group...", "loading", 0);
-  state.groups = state.groups.filter((g) => g.id !== groupId);
+  state.groups.splice(groupIndex, 1);
   renderGroups();
-  try {
-    await api(`/api/groups/${groupId}`, { method: "DELETE" });
-    finishToast(toast, "Group deleted", "success");
-  } catch (error) {
-    state.groups = previous;
-    renderGroups();
-    finishToast(toast, error.message, "error", 3500);
-  }
+  
+  groupQueue = groupQueue.then(async () => {
+    try {
+      await api(`/api/groups/${groupId}`, { method: "DELETE" });
+      Cache.set("groups", state.groups);
+      finishToast(toast, "Group deleted", "success");
+    } catch (error) {
+      if (!state.groups.some(g => g.id === groupId)) {
+        state.groups.splice(groupIndex, 0, backupGroup);
+        renderGroups();
+      }
+      finishToast(toast, error.message, "error", 3500);
+    }
+  });
 };
 
 $("groupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
+  const siteIds = selectedCheckboxValues("groupSite");
+  if (siteIds.length < 2) {
+    showToast("A group must contain at least 2 sites.", "error");
+    return;
+  }
+
   $("groupModal").close();
   const groupId = $("groupId").value.trim();
   const payload = {
     id: groupId || undefined,
     name: $("groupName").value.trim(),
     description: $("groupDescription").value.trim(),
-    site_ids: selectedCheckboxValues("groupSite"),
+    site_ids: siteIds,
   };
-  const previous = [...state.groups];
+  
   $("groupForm").reset();
   const toast = showToast(groupId ? "Saving group..." : "Creating group...", "loading", 0);
 
-  try {
-    if (groupId && state.groups.some((group) => group.id === groupId)) {
-      const index = state.groups.findIndex((group) => group.id === groupId);
-      state.groups[index] = { ...state.groups[index], ...payload, updated_at: new Date().toISOString() };
-      renderGroups();
-      const { id, ...patch } = payload;
-      state.groups[index] = await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
-    } else {
-      const temp = { ...payload, id: groupId || `saving-${Date.now()}`, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
-      state.groups.unshift(temp);
-      renderGroups();
-      const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
-      state.groups = state.groups.map((group) => (group.id === temp.id ? created : group));
-    }
-    renderReferenceControls();
+  if (groupId && state.groups.some((group) => group.id === groupId)) {
+    const idx = state.groups.findIndex(g => g.id === groupId);
+    const backupGroup = state.groups[idx];
+    
+    state.groups[idx] = { ...backupGroup, ...payload, updated_at: new Date().toISOString() };
     renderGroups();
-    finishToast(toast, groupId ? "Group saved" : "Group created", "success");
-  } catch (error) {
-    state.groups = previous;
+    
+    groupQueue = groupQueue.then(async () => {
+      try {
+        const { id, ...patch } = payload;
+        const updated = await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify(patch) });
+        const freshIdx = state.groups.findIndex(g => g.id === groupId);
+        if (freshIdx !== -1) {
+          state.groups[freshIdx] = updated;
+          Cache.set("groups", state.groups);
+          renderReferenceControls();
+          renderGroups();
+        }
+        finishToast(toast, "Group saved", "success");
+      } catch (error) {
+        const freshIdx = state.groups.findIndex(g => g.id === groupId);
+        if (freshIdx !== -1) {
+          state.groups[freshIdx] = backupGroup;
+          renderGroups();
+        }
+        finishToast(toast, `Save failed: ${error.message}`, "error", 3500);
+      }
+    });
+  } else {
+    const tempId = groupId || `saving-${Date.now()}`;
+    const temp = { ...payload, id: tempId, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+    state.groups.unshift(temp);
     renderGroups();
-    finishToast(toast, `Save failed: ${error.message}`, "error", 3500);
+    
+    groupQueue = groupQueue.then(async () => {
+      try {
+        const created = await api("/api/groups", { method: "POST", body: JSON.stringify(payload) });
+        const idx = state.groups.findIndex(g => g.id === tempId);
+        if (idx !== -1) {
+          state.groups[idx] = created;
+          Cache.set("groups", state.groups);
+          renderReferenceControls();
+          renderGroups();
+        }
+        finishToast(toast, "Group created", "success");
+      } catch (error) {
+        state.groups = state.groups.filter(g => g.id !== tempId);
+        renderGroups();
+        finishToast(toast, `Save failed: ${error.message}`, "error", 3500);
+      }
+    });
   }
 });
-
-
 
 $("userForm").addEventListener("submit", async (event) => {
   event.preventDefault();

@@ -98,7 +98,11 @@
         <section id="faqs" class="panel">
           <div class="panel-heading">
             <h2>FAQs</h2>
-            <button id="createFaqBtn" type="button">Add FAQ</button>
+            <div class="toolbar" style="display:flex; gap:10px;">
+              <input type="file" id="faqCsvInput" accept=".csv" style="display: none;" />
+              <button id="importCsvBtn" type="button" class="secondary">Import CSV</button>
+              <button id="createFaqBtn" type="button">Add FAQ</button>
+            </div>
           </div>
           <div id="faqsList" class="faq-list"></div>
         </section>
@@ -111,7 +115,6 @@
                 <option value="">All types</option>
                 <option value="faq_hit">FAQ hit</option>
                 <option value="llm_fallback">Legacy fallback</option>
-                <option value="helpline">Helpline</option>
               </select>
               <select id="logDateFilter">
                 <option value="">All time</option>
@@ -123,6 +126,10 @@
             </div>
           </div>
           <div id="logsList" class="log-list"></div>
+          <div class="pagination-controls" style="display: flex; gap: 10px; margin-top: 15px; justify-content: center;">
+            <button id="prevLogPage" class="secondary" type="button">Previous</button>
+            <button id="nextLogPage" class="secondary" type="button">Next</button>
+          </div>
         </section>
 
         <section id="analytics" class="panel active-panel">
@@ -233,7 +240,7 @@
           <h2 id="groupModalTitle">Create Group</h2>
           <button id="closeGroupModalBtn" type="button" class="ghost">Close</button>
         </div>
-        <input id="groupId" placeholder="group id, optional" />
+        <input id="groupId" type="hidden" />
         <input id="groupName" placeholder="Group name" required />
         <input id="groupDescription" placeholder="Description" class="span-all" />
         <div class="span-all">

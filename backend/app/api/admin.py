@@ -152,8 +152,8 @@ def create_group(
     faq_service: FaqService = Depends(get_faq_service),
     principal: AdminPrincipal = Depends(require_admin),
 ):
-    if not payload.site_ids:
-        raise HTTPException(status_code=400, detail="A group must contain at least one site.")
+    if not payload.site_ids or len(payload.site_ids) < 2:
+        raise HTTPException(status_code=400, detail="A group must contain at least two sites.")
     for site_id in payload.site_ids:
         require_site_access(principal, site_id)
     return faq_service.create_group(payload, background_tasks)
@@ -172,7 +172,9 @@ def update_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found.")
     _require_group_access(group, principal)
-    if payload.site_ids:
+    if payload.site_ids is not None:
+        if len(payload.site_ids) < 2:
+            raise HTTPException(status_code=400, detail="A group must contain at least two sites.")
         for site_id in payload.site_ids:
             require_site_access(principal, site_id)
     updated = faq_service.update_group(group_id, payload, background_tasks)
@@ -321,17 +323,12 @@ def get_site_analytics(
     principal: AdminPrincipal = Depends(require_admin),
 ):
     require_site_access(principal, site_id)
-    logs = repository.list_logs(site_id=site_id, limit=500)
-    total = len(logs)
-    faq_hits = sum(1 for log in logs if log.response_type == ResponseType.faq_hit)
-    llm_fallbacks = sum(1 for log in logs if log.response_type == ResponseType.llm_fallback)
-    helpline_escapes = sum(1 for log in logs if log.response_type == ResponseType.helpline)
-    hit_rate = round((faq_hits / total * 100), 1) if total else 0
-    llm_rate = round((llm_fallbacks / total * 100), 1) if total else 0
-    helpline_rate = round((helpline_escapes / total * 100), 1) if total else 0
-
+    stats = repository.get_site_stats(site_id)
+    
+    # For Top FAQs, we still need to scan some recent logs, 
+    # but we limit it to 200 instead of 500 to save reads.
+    logs = repository.list_logs(site_id=site_id, limit=200)
     from collections import Counter
-
     faq_counter = Counter(log.matched_faq_id for log in logs if log.matched_faq_id)
     top_faqs = []
     for faq_id, count in faq_counter.most_common(5):
@@ -339,12 +336,7 @@ def get_site_analytics(
         top_faqs.append({"question": faq.question if faq else faq_id, "count": count})
 
     return {
-        "total_queries": total,
-        "faq_hits": faq_hits,
-        "hit_rate": hit_rate,
-        "llm_fallbacks": llm_fallbacks,
-        "llm_rate": llm_rate,
-        "helpline_rate": helpline_rate,
+        **stats,
         "top_faqs": top_faqs,
     }
 

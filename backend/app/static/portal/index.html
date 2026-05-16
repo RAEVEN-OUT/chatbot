@@ -49,11 +49,11 @@
             <p id="userEmail" class="email"></p>
             <p id="userRole" class="role">Owner</p>
           </div>
-          <div class="context-toggle">
+          <div class="context-toggle" id="contextToggle" style="display:none;">
             <button id="toggleSitesBtn" class="toggle-btn active" type="button">Sites</button>
             <button id="toggleGroupsBtn" class="toggle-btn" type="button" style="display:none;">Groups</button>
           </div>
-          <div id="selectionArea">
+          <div id="selectionArea" style="display:none;">
             <div id="noSelectionPrompt">
               <button id="initialSelectBtn" class="primary-btn" style="width:100%;" type="button">Select Site</button>
             </div>
@@ -82,7 +82,7 @@
             <i data-lucide="list-filter"></i>
             <span>Logs</span>
           </button>
-          <button class="nav-item" data-tab="groups" id="groupsTab">
+          <button class="nav-item" data-tab="groups" id="groupsTab" style="display:none;">
             <i data-lucide="layers"></i>
             <span>Groups</span>
           </button>
@@ -245,6 +245,11 @@
               </div>
             </div>
               <div class="header-actions">
+                <input type="file" id="faqCsvInput" accept=".csv" style="display: none;" />
+                <button id="importCsvBtn" class="secondary-btn">
+                  <i data-lucide="upload"></i>
+                  <span>Import CSV</span>
+                </button>
                 <button id="createFaqBtn" class="primary-btn">
                   <i data-lucide="plus"></i>
                   <span>Add New Entry</span>
@@ -308,10 +313,7 @@
               </div>
               <form id="groupForm" class="group-form">
                 <div class="input-grid">
-                  <div class="input-group">
-                    <label>Group ID (System)</label>
-                    <input id="groupId" placeholder="Auto-generated" />
-                  </div>
+                  <input id="groupId" type="hidden" />
                   <div class="input-group">
                     <label>Group Name</label>
                     <input id="groupName" placeholder="e.g. Healthcare Services" required />
